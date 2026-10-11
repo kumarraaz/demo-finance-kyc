@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets and local config: never commit
+.env
+.env.*
+!.env.example
+
+# Local database files
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+.vercel/
+npm-debug.log*
+.DS_Store
