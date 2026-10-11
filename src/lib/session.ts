@@ -1,4 +1,6 @@
 // Signed, expiring session token using Web Crypto (HMAC-SHA256).
+// The token only proves "we issued this". Whether the session is still live
+// (not revoked) is checked against the database in admin-session.ts.
 // Format: base64url(JSON payload) + "." + base64url(signature)
 import { SESSION_TTL_SECONDS } from "./constants";
 
@@ -30,17 +32,18 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   ]);
 }
 
-export type SessionPayload = { sub: string; exp: number };
+export type SessionPayload = { sub: string; sid: string; exp: number };
 
 export const MIN_SECRET_LENGTH = 32;
 
 export async function createSessionToken(
   username: string,
+  sessionId: string,
   secret: string,
   now: number = Date.now(),
 ): Promise<string> {
   if (secret.length < MIN_SECRET_LENGTH) throw new Error("SESSION_SECRET is too short");
-  const payload: SessionPayload = { sub: username, exp: Math.floor(now / 1000) + SESSION_TTL_SECONDS };
+  const payload: SessionPayload = { sub: username, sid: sessionId, exp: Math.floor(now / 1000) + SESSION_TTL_SECONDS };
   const body = b64urlEncode(enc.encode(JSON.stringify(payload)));
   const sig = await crypto.subtle.sign("HMAC", await hmacKey(secret), enc.encode(body));
   return `${body}.${b64urlEncode(new Uint8Array(sig))}`;
@@ -69,7 +72,9 @@ export async function verifySessionToken(
   if (!bodyBytes) return null;
   try {
     const payload = JSON.parse(dec.decode(bodyBytes)) as SessionPayload;
-    if (typeof payload.sub !== "string" || typeof payload.exp !== "number") return null;
+    if (typeof payload.sub !== "string" || typeof payload.sid !== "string" || typeof payload.exp !== "number") {
+      return null;
+    }
     if (payload.exp * 1000 <= now) return null;
     return payload;
   } catch {

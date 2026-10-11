@@ -22,8 +22,7 @@ export default async function Dashboard({
   const query = parsed.success ? parsed.data : listQuerySchema.parse({});
 
   const db = getDb();
-  const counts = statusCounts(db);
-  const { items, total } = listApplications(db, query);
+  const [counts, { items, total }] = await Promise.all([statusCounts(db), listApplications(db, query)]);
   const pages = Math.max(1, Math.ceil(total / query.pageSize));
   const link = (page: number) => {
     const p = new URLSearchParams();

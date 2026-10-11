@@ -2,11 +2,23 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 export function AdminNav({ user }: { user: string }) {
   const router = useRouter();
+  const [error, setError] = useState("");
   async function logout() {
-    await fetch("/api/admin/logout", { method: "POST" });
+    setError("");
+    const res = await fetch("/api/admin/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    // Only leave the page if the server confirmed it ended the session.
+    if (!res.ok) {
+      setError("Sign out failed. Try again.");
+      return;
+    }
     router.push("/admin/login");
     router.refresh();
   }
@@ -19,6 +31,7 @@ export function AdminNav({ user }: { user: string }) {
       <button type="button" className="link" onClick={logout}>
         Sign out
       </button>
+      {error && <span className="error" role="alert">{error}</span>}
     </nav>
   );
 }

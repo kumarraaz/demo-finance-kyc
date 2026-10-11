@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { MIN_SECRET_LENGTH } from "./session";
 
 export type AuthConfig = { username: string; passwordHash: string; secret: string };
@@ -40,34 +40,14 @@ export function safeEqualStrings(a: string, b: string): boolean {
   return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
-// Simple in-memory limiter for failed logins. It resets on restart and is
-// per-instance, so on serverless hosting it is a speed bump, not a guarantee.
-export class LoginLimiter {
-  private failures = new Map<string, { count: number; first: number }>();
-  constructor(
-    private max = 5,
-    private windowMs = 15 * 60 * 1000,
-  ) {}
-
-  isBlocked(key: string, now = Date.now()): boolean {
-    const f = this.failures.get(key);
-    if (!f) return false;
-    if (now - f.first > this.windowMs) {
-      this.failures.delete(key);
-      return false;
-    }
-    return f.count >= this.max;
-  }
-
-  recordFailure(key: string, now = Date.now()): void {
-    const f = this.failures.get(key);
-    if (!f || now - f.first > this.windowMs) this.failures.set(key, { count: 1, first: now });
-    else f.count++;
-  }
-
-  reset(key: string): void {
-    this.failures.delete(key);
-  }
+// Client identity for rate limiting. On Vercel, x-forwarded-for is set by the
+// platform and cannot be spoofed by the client. On other hosts, make sure your
+// proxy overwrites it, otherwise the per-IP limit can be bypassed (the global
+// limit still applies). The IP is hashed before it is stored.
+export function clientIp(headers: Headers): string {
+  return headers.get("x-real-ip")?.trim() || headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 }
 
-export const loginLimiter = new LoginLimiter();
+export function hashForKey(value: string, secret: string): string {
+  return createHmac("sha256", secret).update(value).digest("hex").slice(0, 32);
+}

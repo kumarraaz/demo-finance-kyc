@@ -1,75 +1,38 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@/generated/prisma/client";
 
-export type Db = Database.Database;
+export type Db = PrismaClient;
 
-const MIGRATIONS: string[] = [
-  `
-  CREATE TABLE applications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    reference TEXT UNIQUE,
-    applicant_name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    loan_product TEXT NOT NULL CHECK (loan_product IN ('personal','education','home')),
-    requested_amount INTEGER NOT NULL CHECK (requested_amount > 0),
-    purpose TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL CHECK (status IN
-      ('submitted','in_review','more_info_needed','simulated_check_passed','simulated_check_failed','closed')),
-    is_simulated INTEGER NOT NULL DEFAULT 1 CHECK (is_simulated = 1),
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+type Options = {
+  /** Max connections held by this process. Keep low on serverless. */
+  maxConnections?: number;
+  /** Use a non-default Postgres schema (tests). */
+  schema?: string;
+};
+
+export function createPrismaClient(connectionString: string, opts: Options = {}): PrismaClient {
+  const adapter = new PrismaPg(
+    {
+      connectionString,
+      max: opts.maxConnections ?? Number(process.env.DATABASE_POOL_MAX ?? 5),
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000,
+      ...(opts.schema ? { options: `-c search_path=${opts.schema}` } : {}),
+    },
+    opts.schema ? { schema: opts.schema } : undefined,
   );
-  CREATE INDEX idx_applications_status ON applications(status);
-  CREATE INDEX idx_applications_created ON applications(created_at DESC);
+  return new PrismaClient({ adapter });
+}
 
-  CREATE TABLE status_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    application_id INTEGER NOT NULL REFERENCES applications(id),
-    from_status TEXT,
-    to_status TEXT NOT NULL,
-    note TEXT NOT NULL DEFAULT '',
-    changed_by TEXT NOT NULL,
-    changed_at TEXT NOT NULL
-  );
-  CREATE INDEX idx_history_application ON status_history(application_id, id);
+const globalForDb = globalThis as unknown as { __demoKycDb?: PrismaClient };
 
-  -- The audit trail is append-only.
-  CREATE TRIGGER status_history_no_update BEFORE UPDATE ON status_history
-  BEGIN SELECT RAISE(ABORT, 'status_history is append-only'); END;
-  CREATE TRIGGER status_history_no_delete BEFORE DELETE ON status_history
-  BEGIN SELECT RAISE(ABORT, 'status_history is append-only'); END;
-  `,
-];
-
-export function migrate(db: Db): void {
-  const current = db.pragma("user_version", { simple: true }) as number;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    db.transaction(() => {
-      db.exec(MIGRATIONS[v]);
-      db.pragma(`user_version = ${v + 1}`);
-    })();
+// Lazy: importing this module never opens a connection, so `next build`
+// works without a database. Reuse one client per process (also across hot reloads).
+export function getDb(): PrismaClient {
+  if (!globalForDb.__demoKycDb) {
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error("DATABASE_URL is not set");
+    globalForDb.__demoKycDb = createPrismaClient(url);
   }
-}
-
-export function openDatabase(file: string): Db {
-  if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
-  const db = new Database(file);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  migrate(db);
-  return db;
-}
-
-function defaultPath(): string {
-  if (process.env.DATABASE_PATH) return process.env.DATABASE_PATH;
-  // Vercel's filesystem is read-only except /tmp, which is ephemeral.
-  return process.env.VERCEL ? "/tmp/demo-kyc.db" : path.join(process.cwd(), "data", "demo-kyc.db");
-}
-
-const globalForDb = globalThis as unknown as { __demoKycDb?: Db };
-
-export function getDb(): Db {
-  if (!globalForDb.__demoKycDb) globalForDb.__demoKycDb = openDatabase(defaultPath());
   return globalForDb.__demoKycDb;
 }

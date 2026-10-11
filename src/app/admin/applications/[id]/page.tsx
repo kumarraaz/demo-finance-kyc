@@ -15,9 +15,9 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
   const id = parseId((await params).id);
   if (id === null) notFound();
   const db = getDb();
-  const app = getApplication(db, id);
+  const app = await getApplication(db, id);
   if (!app) notFound();
-  const history = getHistory(db, id);
+  const history = await getHistory(db, id);
 
   return (
     <>

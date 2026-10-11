@@ -1,33 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { LoginLimiter, getAuthConfig, hashPassword, verifyPassword } from "@/lib/auth";
+import { clientIp, getAuthConfig, hashForKey, hashPassword, verifyPassword } from "@/lib/auth";
 import { createSessionToken, verifySessionToken } from "@/lib/session";
 
 const SECRET = "x".repeat(40);
 
 describe("session tokens", () => {
   it("round-trips", async () => {
-    const t = await createSessionToken("admin", SECRET);
-    expect(await verifySessionToken(t, SECRET)).toMatchObject({ sub: "admin" });
+    const t = await createSessionToken("admin", "sid-1", SECRET);
+    expect(await verifySessionToken(t, SECRET)).toMatchObject({ sub: "admin", sid: "sid-1" });
   });
   it("rejects a wrong secret", async () => {
-    const t = await createSessionToken("admin", SECRET);
+    const t = await createSessionToken("admin", "sid-1", SECRET);
     expect(await verifySessionToken(t, "y".repeat(40))).toBeNull();
   });
   it("rejects a tampered payload", async () => {
-    const t = await createSessionToken("admin", SECRET);
+    const t = await createSessionToken("admin", "sid-1", SECRET);
     const [, sig] = t.split(".");
-    const forged = btoa(JSON.stringify({ sub: "root", exp: 9999999999 })).replace(/=+$/, "");
+    const forged = btoa(JSON.stringify({ sub: "root", sid: "sid-1", exp: 9999999999 })).replace(/=+$/, "");
     expect(await verifySessionToken(`${forged}.${sig}`, SECRET)).toBeNull();
   });
   it("rejects expired tokens", async () => {
-    const t = await createSessionToken("admin", SECRET, Date.now() - 24 * 3600 * 1000);
+    const t = await createSessionToken("admin", "sid-1", SECRET, Date.now() - 24 * 3600 * 1000);
     expect(await verifySessionToken(t, SECRET)).toBeNull();
+  });
+  it("rejects tokens that are missing the session id", async () => {
+    const body = btoa(JSON.stringify({ sub: "admin", exp: 9999999999 })).replace(/=+$/, "");
+    expect(await verifySessionToken(`${body}.AAAA`, SECRET)).toBeNull();
   });
   it("rejects garbage, missing values and short secrets", async () => {
     for (const bad of [undefined, "", "abc", "a.b.c", "!!!.???"]) {
       expect(await verifySessionToken(bad, SECRET)).toBeNull();
     }
-    await expect(createSessionToken("admin", "short")).rejects.toThrow();
+    await expect(createSessionToken("admin", "sid-1", "short")).rejects.toThrow();
     expect(await verifySessionToken("a.b", "short")).toBeNull();
   });
 });
@@ -58,14 +62,17 @@ describe("auth config", () => {
   });
 });
 
-describe("LoginLimiter", () => {
-  it("blocks after max failures and unblocks after the window or reset", () => {
-    const l = new LoginLimiter(3, 1000);
-    for (let i = 0; i < 3; i++) l.recordFailure("ip", 0);
-    expect(l.isBlocked("ip", 500)).toBe(true);
-    expect(l.isBlocked("ip", 1500)).toBe(false);
-    for (let i = 0; i < 3; i++) l.recordFailure("ip", 2000);
-    l.reset("ip");
-    expect(l.isBlocked("ip", 2001)).toBe(false);
+describe("client identity for rate limiting", () => {
+  it("prefers x-real-ip, then the first x-forwarded-for entry, then 'unknown'", () => {
+    expect(clientIp(new Headers({ "x-real-ip": "1.1.1.1", "x-forwarded-for": "2.2.2.2" }))).toBe("1.1.1.1");
+    expect(clientIp(new Headers({ "x-forwarded-for": "2.2.2.2, 3.3.3.3" }))).toBe("2.2.2.2");
+    expect(clientIp(new Headers())).toBe("unknown");
+  });
+  it("hashes identifiers so raw IPs are never stored, and the hash depends on the secret", () => {
+    const a = hashForKey("203.0.113.9", SECRET);
+    expect(a).not.toContain("203");
+    expect(a).toBe(hashForKey("203.0.113.9", SECRET));
+    expect(a).not.toBe(hashForKey("203.0.113.9", "y".repeat(40)));
+    expect(a).not.toBe(hashForKey("203.0.113.10", SECRET));
   });
 });
