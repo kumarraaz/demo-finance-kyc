@@ -40,12 +40,14 @@ export function safeEqualStrings(a: string, b: string): boolean {
   return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
-// Client identity for rate limiting. On Vercel, x-forwarded-for is set by the
-// platform and cannot be spoofed by the client. On other hosts, make sure your
-// proxy overwrites it, otherwise the per-IP limit can be bypassed (the global
-// limit still applies). The IP is hashed before it is stored.
+// Client identity for rate limiting. Vercel documents that it OVERWRITES
+// x-forwarded-for to stop clients spoofing it, so that is the header we trust
+// first. x-real-ip is only a fallback: its handling is not documented the same
+// way, so it must never take priority. On other hosts, make sure your proxy
+// overwrites x-forwarded-for, otherwise the per-IP limit can be bypassed (the
+// global limit still applies). The IP is hashed before it is stored.
 export function clientIp(headers: Headers): string {
-  return headers.get("x-real-ip")?.trim() || headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  return headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip")?.trim() || "unknown";
 }
 
 export function hashForKey(value: string, secret: string): string {

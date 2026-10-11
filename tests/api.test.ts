@@ -27,7 +27,7 @@ function req(url: string, init: Init = {}) {
   if (init.type !== null) headers.set("content-type", init.type ?? "application/json");
   if (init.origin !== null) headers.set("origin", init.origin ?? ORIGIN);
   if (init.cookie) headers.set("cookie", init.cookie);
-  if (init.ip) headers.set("x-real-ip", init.ip);
+  if (init.ip) headers.set("x-forwarded-for", init.ip);
   for (const [k, v] of Object.entries(init.headers ?? {})) headers.set(k, v);
   return new NextRequest(`${ORIGIN}${url}`, {
     method: init.method ?? "GET",
@@ -114,6 +114,14 @@ describe.skipIf(!hasTestDb)("HTTP layer against PostgreSQL", () => {
       for (let i = 0; i < LOGIN_MAX_PER_IP - 1; i++) await doLogin("bad", ip);
       expect((await doLogin(PASSWORD, ip)).status).toBe(200);
       for (let i = 0; i < LOGIN_MAX_PER_IP; i++) expect((await doLogin("bad", ip)).status).toBe(401);
+    });
+    it("a spoofed x-real-ip cannot be used to dodge the per-IP limit", async () => {
+      const ip = freshIp();
+      for (let i = 0; i < LOGIN_MAX_PER_IP; i++) expect((await doLogin("bad", ip)).status).toBe(401);
+      const rotated = await login.POST(
+        req("/api/admin/login", { method: "POST", ip, headers: { "x-real-ip": "10.9.8.7" }, body: { username: "admin", password: PASSWORD } }),
+      );
+      expect(rotated.status).toBe(429);
     });
     it("stores a hash of the IP, never the raw address", async () => {
       const ip = "203.0.113.77";
@@ -275,7 +283,28 @@ describe.skipIf(!hasTestDb)("HTTP layer against PostgreSQL", () => {
     it("reports ok with the database up, and says nothing sensitive", async () => {
       const res = await health.GET();
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ status: "ok", database: "up", mode: "demo", verification: "simulated" });
+      expect(await res.json()).toEqual({ status: "ok", database: "up", schema: "ok", mode: "demo", verification: "simulated" });
+    });
+  });
+
+  describe("health on an un-migrated database", () => {
+    it("reports degraded/503 (not ok) when the database is reachable but has no tables", async () => {
+      const { newSchemaName, withPgClient, dropSchema } = await import("./helpers/test-db");
+      const empty = newSchemaName();
+      await withPgClient((c) => c.query(`CREATE SCHEMA "${empty}"`));
+      const g = globalThis as unknown as { __demoKycDb: unknown };
+      const good = g.__demoKycDb;
+      const bare = createPrismaClient(t.url, { schema: empty, maxConnections: 2 });
+      g.__demoKycDb = bare;
+      try {
+        const res = await health.GET();
+        expect(res.status).toBe(503);
+        expect(await res.json()).toEqual({ status: "degraded", database: "up", schema: "missing", mode: "demo", verification: "simulated" });
+      } finally {
+        g.__demoKycDb = good;
+        await bare.$disconnect();
+        await dropSchema(empty);
+      }
     });
   });
 

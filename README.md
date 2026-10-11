@@ -34,7 +34,7 @@ There is deliberately no "approved" or "rejected" status. `simulated_check_*` ou
 | `/` | public | Landing page |
 | `/admin/login` | public | Sign in |
 | `/admin`, `/admin/applications/new`, `/admin/applications/[id]` | admin | Dashboard, create, detail + status + history |
-| `GET /api/health` | public | `{status, database}` only. 503 if the database is unreachable |
+| `GET /api/health` | public | `{status, database, schema}` only. 503 if the database is unreachable or migrations are missing |
 | `POST /api/admin/login` | public | Sign in (rate limited) |
 | `POST /api/admin/logout` | cookie | Revokes the session server-side |
 | `GET, POST /api/admin/applications` | admin | List / create |
@@ -69,7 +69,7 @@ A database owner or superuser can still drop triggers. For a real system, give t
 
 ```bash
 npm ci                                   # also runs `prisma generate` (postinstall)
-cp .env.example .env.local               # then fill in the placeholders
+cp .env.example .env.local               # then edit the placeholders
 ```
 
 You need a PostgreSQL database (tested on 16). For example with Docker (pick your own password; do not reuse a real one):
@@ -79,12 +79,13 @@ docker run --name dfk-pg -e POSTGRES_PASSWORD='choose-a-local-password' -e POSTG
 # DATABASE_URL=postgresql://postgres:choose-a-local-password@localhost:5432/dfk
 ```
 
-Then:
+Put the URL in `.env.local` as `DATABASE_URL` (and `DIRECT_URL` if you like). Both Next.js and the Prisma CLI read `.env.local`; a real environment variable always wins over the file. Then:
 
 ```bash
 npm run db:migrate:deploy                                # apply migrations
 npm run hash-password -- 'a-long-password-you-choose'    # paste output into ADMIN_PASSWORD_HASH
 openssl rand -base64 48                                  # paste into SESSION_SECRET
+npm run check-env                                        # optional: are the variables present and well-formed? (never prints values)
 npm run dev
 ```
 
@@ -92,16 +93,17 @@ Never commit `.env.local` or any real secret. `.gitignore` excludes `.env*` (exc
 
 ## Migration strategy
 
-Migrations are plain SQL files in `prisma/migrations/`, applied in order by `prisma migrate deploy`. Prisma records each one in `_prisma_migrations` and takes a Postgres advisory lock, so two builds cannot apply the same migration twice.
+Migrations are plain SQL files in `prisma/migrations/`, applied in order by `prisma migrate deploy`. Prisma records each one in `_prisma_migrations` and takes a PostgreSQL advisory lock while applying, so two builds should not apply the same migration twice.
 
 **Rules**
 
-1. Change `schema.prisma`, then `npm run db:migrate:dev -- --name <what_changed>` **against a local database only**. Read the generated SQL. Keep the hand-written section of the init migration (triggers, CHECKs, sequence) in mind: Prisma will not recreate it.
-2. Never edit a migration that has been applied anywhere shared. Add a new one.
+1. Change `schema.prisma`, then `npm run db:migrate:dev -- --name <what_changed>` **against a local database only**. Read the generated SQL. The initial migration contains hand-written triggers, CHECKs and a sequence that Prisma will not regenerate: never remove them.
+2. Never edit a migration that has been applied anywhere shared. Add a new one. (The initial migration was edited twice before any shared database existed; that is no longer allowed once one does.)
 3. Never run `migrate dev`, `migrate reset` or `db push` against a shared database.
-4. Make risky changes in steps (expand, deploy code, contract): add nullable column, ship code that writes it, backfill, then tighten or drop.
-5. There are no down-migrations. Roll forward with a fix, or restore from a backup. Take a backup/snapshot before applying anything to production.
-6. `npm run db:check-drift` fails if `schema.prisma` and the migrations disagree. The test suite runs the same check.
+4. Migrations must work for an ordinary owner role: no `CREATE SCHEMA/DATABASE/EXTENSION/ROLE`, no `GRANT`. A test enforces this (a `CREATE SCHEMA IF NOT EXISTS "public"` line fails for a role without database-level CREATE).
+5. Make risky changes in steps (expand, deploy code, contract).
+6. There are no down-migrations. Roll forward with a fix, or restore from a backup. Back up before applying anything to production.
+7. `npm run db:check-drift` fails if `schema.prisma` and the migrations disagree. The test suite runs the same check.
 
 **Where migrations run**
 
@@ -109,36 +111,35 @@ Migrations are plain SQL files in `prisma/migrations/`, applied in order by `pri
 | --- | --- |
 | Local | `npm run db:migrate:deploy` |
 | CI | Tests apply every migration to an empty database and check idempotence and drift |
-| Vercel Preview | Opt-in: set `RUN_DB_MIGRATIONS=1` on the **Preview** environment only, with a Preview-only `DIRECT_URL`. `scripts/vercel-build.mjs` then runs `prisma migrate deploy` before `next build` |
-| Vercel Production | **Manual**: run `npm run db:migrate:deploy` from a trusted machine with the production `DIRECT_URL`, then deploy. The build refuses to migrate production unless `ALLOW_PRODUCTION_MIGRATIONS=1` is also set |
+| Vercel Preview | Opt-in: `RUN_DB_MIGRATIONS=1` on the **Preview** environment only, with a Preview-only `DIRECT_URL`. `scripts/vercel-build.mjs` then runs `prisma migrate deploy` before `next build`; a failed migration fails the build |
+| Vercel Production | **Manual**, from a trusted machine, with the production `DIRECT_URL`. The build refuses to migrate production unless `ALLOW_PRODUCTION_MIGRATIONS=1` is also set |
 
-By default (no flag), a build never touches any database.
+By default (no flag), a build never touches any database. All previews share one Preview database unless you give each branch its own; a destructive migration in one branch can break another branch's preview.
 
-Caveat: all previews share one Preview database unless you give each branch its own. A destructive migration in one branch can break another branch's preview. A database provider with branching (for example Neon) avoids this.
+## Deploying to Vercel
 
-## Vercel deployment checklist
+**Not deployed and not verified.** At the time of writing no Vercel project, hosted database or GitHub Actions run exists for this repository. The full, step-by-step guide (creating separate Preview and Production databases, exact environment variables, migrations, and a verification checklist) is in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
-Nothing below has been done or verified from this repository. At the time of writing, no Vercel project, database or deployment could be found for it. Treat each line as a to-do.
+Short version of the required variables (every one the code reads):
 
-1. Create a hosted PostgreSQL database (Vercel Marketplace or any provider). Use **separate databases** for Preview and Production.
-2. Import `kumarraaz/demo-finance-kyc` into Vercel. `vercel.json` sets `npm ci` and `npm run vercel-build`. Node 22.
-3. Set environment variables (Project Settings > Environment Variables). Mark all of them **Sensitive**.
+| Variable | Preview | Production |
+| --- | --- | --- |
+| `DATABASE_URL` (pooled, `sslmode=verify-full`) | required | required |
+| `DIRECT_URL` (direct, owner role, migrations only) | required if `RUN_DB_MIGRATIONS=1` | required for manual migrations |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `SESSION_SECRET` | required | required |
+| `RUN_DB_MIGRATIONS` | `1` (optional) | leave unset |
+| `ALLOW_PRODUCTION_MIGRATIONS` | leave unset | leave unset |
+| `DATABASE_POOL_MAX` | optional | optional |
 
-| Variable | Preview | Production | Notes |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | required | required | Provider's **pooled** connection string |
-| `DIRECT_URL` | required if migrating | required for manual migrations | **Non-pooled** string. Never share Preview's with Production |
-| `ADMIN_USERNAME` | required | required | |
-| `ADMIN_PASSWORD_HASH` | required | required | From `npm run hash-password` |
-| `SESSION_SECRET` | required | required | 32+ random chars. Use a different value per environment |
-| `RUN_DB_MIGRATIONS` | `1` (optional) | leave unset | |
-| `ALLOW_PRODUCTION_MIGRATIONS` | leave unset | leave unset | |
-| `DATABASE_POOL_MAX` | optional | optional | Default 5 per instance |
+Preview and Production must use **different databases and different secrets**. After a deploy, `GET /api/health` must return `{"status":"ok","database":"up","schema":"ok"}`; `"schema":"missing"` means migrations were not applied to that database.
 
-4. Apply migrations (see table above) before the first request, or the app will error on every query.
-5. After a deploy, check `GET /api/health`. Expect `{"status":"ok","database":"up",...}`. A `503` means the app cannot reach the database.
-6. Sign in once and create a demo application to confirm writes work.
-7. Preview URLs are public unless Vercel Deployment Protection is on. This app is a demo with no real data, but keep protection enabled.
+### Database connections on Vercel
+
+- One `pg` pool per function instance (default 5 connections, `DATABASE_POOL_MAX`), 10 second idle timeout, created lazily so `next build` needs no database.
+- The pool is registered with `attachDatabasePool` from `@vercel/functions`, which Vercel documents for releasing idle connections before Fluid Compute suspends a function. It does nothing outside Vercel's runtime.
+- Use the provider's **pooled** string at runtime and the **direct** string for migrations. The adapter does not name prepared statements, and transactions stay on one connection, so a transaction-mode pooler should work. That has not been tested against a real pooler.
+- Prisma 7 runs engine-free (query compiler in WebAssembly, embedded as JavaScript), so no native engine binary has to be shipped. A traced standalone bundle was run in isolation locally and served health, login and create.
+
 
 ## Security design
 
@@ -158,7 +159,7 @@ Nothing below has been done or verified from this repository. At the time of wri
 - 5 attempts per IP per 15 minutes, 30 per 15 minutes across all IPs. Counted before the password check. A success clears that IP's counter.
 - IPs are HMAC-hashed before storage.
 - Trade-off: the global limit means an attacker can lock the (single) admin out for up to 15 minutes. That is deliberate: it stops distributed guessing.
-- The IP comes from `x-real-ip` / `x-forwarded-for`. Vercel sets these itself. Behind any other proxy, make sure it overwrites them, or the per-IP limit can be bypassed (the global limit still holds).
+- The IP is the first `x-forwarded-for` entry. Vercel's docs state it overwrites that header to prevent spoofing. `x-real-ip` is only a fallback and never takes priority. Behind any other proxy, make sure it overwrites `x-forwarded-for`, or the per-IP limit can be bypassed (the global limit still holds).
 - If the database is down, login fails closed.
 
 **Headers**
@@ -171,33 +172,35 @@ Nothing below has been done or verified from this repository. At the time of wri
 - Text fields that look like a PAN or Aadhaar number are rejected. This is a guard rail, not a compliance control: it can miss formats and can block a harmless 12-digit number.
 - Only fictional name, email, product, amount and purpose are stored. No documents, no identity numbers.
 
-## Checks
+## Checks and CI
 
 ```bash
 export TEST_DATABASE_URL='postgresql://USER:PASSWORD@localhost:5432/DBNAME'   # throwaway database
 npm run check        # lint + typecheck + tests
 npm run build
+npm run audit:gate   # dependency audit gate
 ```
 
 - Database tests create a random schema per test file, apply the real migrations, and drop it afterwards. Point `TEST_DATABASE_URL` only at a throwaway database.
-- Without `TEST_DATABASE_URL` the database tests are **skipped locally** (and say so). In CI (`CI=1`) a missing `TEST_DATABASE_URL` is a test **failure**.
-- `.github/workflows/ci.yml` runs lint, typecheck, tests (with a Postgres 16 service), build, and `npm audit --omit=dev --audit-level=high`.
+- Without `TEST_DATABASE_URL`, locally, the PostgreSQL suites are reported as **skipped** in the summary.
+- When `CI` or `REQUIRE_DB_TESTS` is set, a missing, empty or unreachable test database is a **failure** (`tests/db-required.test.ts`). Checked locally for: unset, empty, unreachable host, and wrong credentials.
+- `.github/workflows/ci.yml` runs on **every push to any branch, every pull request, and manually**. It starts a PostgreSQL 16 service, verifies it is reachable, then runs lint, typecheck, `npm run test:ci` (Vitest plus a gate that fails on any skipped, todo or failed test), build, and `npm run audit:gate`.
+- It has not run on GitHub yet. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#9-github-actions).
 
 ## Dependency audit
 
 | Scope | Result |
 | --- | --- |
 | Production dependencies (`npm audit --omit=dev`) | **0 vulnerabilities** |
-| Everything incl. dev tooling (`npm audit`) | **5 high**, all one chain: `eslint-config-next` > `@next/eslint-plugin-next` > `fast-glob` > `micromatch` > `braces` |
+| Whole tree incl. dev tools (`npm audit`) | **5 high**, one dev-only chain ending in `braces` (GHSA-vfj7-8cjw-p6xm). **No fixed version exists.** |
 
-- **Fixed with `overrides`:** Prisma 7.10.0's CLI pins `mysql2@3.15.3` (two advisories) and `deepmerge-ts@7.1.5` (stack exhaustion). Overridden to `mysql2@^3.24.5` (same major) and `deepmerge-ts@^8.0.2`. Verified with the real Prisma CLI: `generate`, `migrate deploy/status/diff` and the migration tests all pass. This project only uses PostgreSQL, so the MySQL code path is unused anyway. Re-check these overrides when upgrading Prisma, and remove them once Prisma ships fixed versions.
-- **Not fixable yet:** `braces` (GHSA-vfj7-8cjw-p6xm, deeply nested brace patterns cause stack exhaustion / DoS). Affected range is `<=3.0.3` and 3.0.3 is the newest published version, so no patched release exists. `npm audit fix --force` proposes downgrading to `eslint-config-next@14.2.35`: that is two majors older, targets ESLint 7/8 (this repo uses ESLint 9 flat config) and Next 14, so it was rejected. Risk assessment: it is reachable only from the lint tool (`npm ls --omit=dev braces` is empty), it is not in the deployed bundle, and exploiting it needs attacker-controlled glob patterns, which the lint plugin does not take. Re-check when `fast-glob`/`micromatch`/`braces` publish a fix.
-- Prisma's `latest` npm tag currently points to an `8.0.0-rc` pre-release with a different toolchain and no matching `@prisma/client@8`; it was not adopted.
+The five are not shipped, and are pinned by `npm run audit:gate` so nothing new can appear unnoticed. Prisma's own pinned `mysql2` and `deepmerge-ts` advisories are fixed with `overrides`. Full details, the reasons the npm-suggested downgrade was rejected, and how to re-check: **[docs/dependency-audit.md](docs/dependency-audit.md)**.
+
 
 ## Known limitations
 
 - One admin account from env vars. No MFA, no roles, no password reset.
-- Not verified on a real Vercel deployment (see checklist).
+- Not verified on a real Vercel deployment, hosted database or GitHub Actions run (see docs/DEPLOYMENT.md).
 - No Content-Security-Policy reporting endpoint.
 - Rate limiter is a fixed window (a burst at a window boundary can briefly allow up to 2x).
 - No applicant-facing flow, no document upload, no real verification provider. Out of scope for this prototype.

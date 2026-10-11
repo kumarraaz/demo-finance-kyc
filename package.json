@@ -17,11 +17,15 @@
     "db:migrate:status": "prisma migrate status",
     "db:migrate:dev": "prisma migrate dev",
     "db:check-drift": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
-    "vercel-build": "node scripts/vercel-build.mjs"
+    "vercel-build": "node scripts/vercel-build.mjs",
+    "test:ci": "vitest run --reporter=default --reporter=json --outputFile=vitest-results.json && node scripts/assert-no-skips.mjs vitest-results.json",
+    "audit:gate": "node scripts/audit-gate.mjs",
+    "check-env": "node scripts/check-env.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "@vercel/functions": "^3.9.11",
     "next": "^16.4.0",
     "pg": "^8.23.1",
     "react": "^19.3.0",
@@ -41,7 +45,7 @@
     "vitest": "^5.0.3"
   },
   "engines": {
-    "node": ">=22 <25"
+    "node": "22.x"
   },
   "overrides": {
     "mysql2": "^3.24.5",

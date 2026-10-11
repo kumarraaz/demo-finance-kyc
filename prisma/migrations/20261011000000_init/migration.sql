@@ -1,6 +1,3 @@
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateEnum
 CREATE TYPE "application_status" AS ENUM ('submitted', 'in_review', 'more_info_needed', 'simulated_check_passed', 'simulated_check_failed', 'closed');
 

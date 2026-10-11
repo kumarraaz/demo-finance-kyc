@@ -1,4 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
+import { attachDatabasePool } from "@vercel/functions";
+import pg from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 export type Db = PrismaClient;
@@ -11,16 +13,22 @@ type Options = {
 };
 
 export function createPrismaClient(connectionString: string, opts: Options = {}): PrismaClient {
-  const adapter = new PrismaPg(
-    {
-      connectionString,
-      max: opts.maxConnections ?? Number(process.env.DATABASE_POOL_MAX ?? 5),
-      idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 10_000,
-      ...(opts.schema ? { options: `-c search_path=${opts.schema}` } : {}),
-    },
-    opts.schema ? { schema: opts.schema } : undefined,
-  );
+  const pool = new pg.Pool({
+    connectionString,
+    max: opts.maxConnections ?? Number(process.env.DATABASE_POOL_MAX ?? 5),
+    // Short idle timeout: serverless instances freeze, and long-idle sockets
+    // are often dropped by poolers. attachDatabasePool reads this value.
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 10_000,
+    ...(opts.schema ? { options: `-c search_path=${opts.schema}` } : {}),
+  });
+  // Without this, an idle client that the server drops would crash the process
+  // with an unhandled 'error' event.
+  pool.on("error", (err) => console.error("Idle database client error:", err.message));
+  // On Vercel Fluid Compute this releases idle connections before a function
+  // is suspended. Outside Vercel's runtime it does nothing.
+  attachDatabasePool(pool);
+  const adapter = new PrismaPg(pool, opts.schema ? { schema: opts.schema } : undefined);
   return new PrismaClient({ adapter });
 }
 

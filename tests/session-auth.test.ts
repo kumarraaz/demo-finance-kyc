@@ -63,9 +63,11 @@ describe("auth config", () => {
 });
 
 describe("client identity for rate limiting", () => {
-  it("prefers x-real-ip, then the first x-forwarded-for entry, then 'unknown'", () => {
-    expect(clientIp(new Headers({ "x-real-ip": "1.1.1.1", "x-forwarded-for": "2.2.2.2" }))).toBe("1.1.1.1");
+  it("trusts the first x-forwarded-for entry (overwritten by Vercel), only then x-real-ip, then 'unknown'", () => {
+    // A client-supplied x-real-ip must never override the platform-set x-forwarded-for.
+    expect(clientIp(new Headers({ "x-real-ip": "1.1.1.1", "x-forwarded-for": "2.2.2.2" }))).toBe("2.2.2.2");
     expect(clientIp(new Headers({ "x-forwarded-for": "2.2.2.2, 3.3.3.3" }))).toBe("2.2.2.2");
+    expect(clientIp(new Headers({ "x-real-ip": "1.1.1.1" }))).toBe("1.1.1.1");
     expect(clientIp(new Headers())).toBe("unknown");
   });
   it("hashes identifiers so raw IPs are never stored, and the hash depends on the secret", () => {

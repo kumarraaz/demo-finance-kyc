@@ -7,7 +7,7 @@ import { createPrismaClient, type Db } from "@/lib/db";
 // Database tests need a real PostgreSQL. Point TEST_DATABASE_URL at a throwaway
 // database (never production). Each test file gets its own schema, built from
 // the real migration files, and drops it afterwards.
-export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL?.trim() || undefined;
 export const hasTestDb = Boolean(TEST_DATABASE_URL);
 
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../prisma/migrations");

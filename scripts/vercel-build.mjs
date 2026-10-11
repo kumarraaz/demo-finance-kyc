@@ -8,6 +8,7 @@
 // DIRECT_URL that points at the PREVIEW database. Apply production migrations
 // deliberately (see README). This script never prints connection strings.
 import { spawnSync } from "node:child_process";
+import { checkEnv, formatReport } from "./check-env.mjs";
 
 function run(args) {
   const result = spawnSync("npx", args, { stdio: "inherit" });
@@ -15,6 +16,13 @@ function run(args) {
 }
 
 run(["prisma", "generate"]);
+
+// Informational only: report which settings look missing or malformed so a bad
+// Preview/Production configuration is visible in the build log. Never prints values.
+// It does not fail the build, because the database may legitimately not exist yet.
+const target = process.env.VERCEL_ENV === "production" ? "production" : process.env.VERCEL_ENV === "preview" ? "preview" : "local";
+console.log(`Environment check (${target}):`);
+console.log(formatReport(checkEnv(process.env, target)));
 
 if (process.env.RUN_DB_MIGRATIONS === "1") {
   if (!process.env.DIRECT_URL && !process.env.DATABASE_URL) {
