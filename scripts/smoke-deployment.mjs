@@ -51,6 +51,28 @@ export function checkPageHeaders(get, { https }) {
   return problems;
 }
 
+/**
+ * True when a response comes from Vercel Deployment Protection instead of the application.
+ * Protection answers with a 302/307 to vercel.com (SSO login), or a 401 HTML page from Vercel, and
+ * sets a _vercel_sso_nonce cookie. The app itself never redirects to vercel.com and answers API
+ * calls with JSON, so these cannot be mistaken for app behaviour. Pure, unit-tested.
+ * @param {{ status: number, get: (name: string) => string | null | undefined, setCookies?: string[] }} res
+ */
+export function isVercelProtection({ status, get, setCookies = [] }) {
+  const location = get("location") ?? "";
+  const redirectsToVercel = status >= 300 && status < 400 && /^https:\/\/vercel\.com\/(sso-api|login)/i.test(location);
+  const ssoCookie = setCookies.some((c) => c.startsWith("_vercel_sso_nonce="));
+  const vercelHtml401 = status === 401 && /vercel/i.test(get("server") ?? "") && !(get("content-type") ?? "").includes("json");
+  return redirectsToVercel || ssoCookie || vercelHtml401;
+}
+
+/** Explains a protection response. Says whether a bypass secret was sent, without ever printing it. */
+export function protectionMessage({ bypassSent }) {
+  return bypassSent
+    ? "Vercel Deployment Protection answered instead of the app even though VERCEL_AUTOMATION_BYPASS_SECRET was sent: the secret is wrong, was regenerated, or belongs to another project. Create/copy it again under Project > Settings > Deployment Protection > Protection Bypass for Automation."
+    : "Vercel Deployment Protection answered instead of the app (a redirect to vercel.com/sso-api or a 401 page). Set VERCEL_AUTOMATION_BYPASS_SECRET (Project > Settings > Deployment Protection > Protection Bypass for Automation) and run again.";
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const base = args.find((a) => !a.startsWith("--"));
@@ -84,7 +106,16 @@ async function main() {
     console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` - ${detail}` : ""}`);
   };
   const headers = (extra = {}) => ({ ...(bypass ? { "x-vercel-protection-bypass": bypass } : {}), ...extra });
-  const req = (path, init = {}) => fetch(origin + path, { redirect: "manual", ...init, headers: headers(init.headers) });
+  class ProtectionError extends Error {}
+  // Every response is checked: if Vercel (not the app) answers, stop at once with ONE clear message
+  // instead of reporting a pile of misleading app failures.
+  const req = async (path, init = {}) => {
+    const res = await fetch(origin + path, { redirect: "manual", ...init, headers: headers(init.headers) });
+    if (isVercelProtection({ status: res.status, get: (n) => res.headers.get(n), setCookies: res.headers.getSetCookie?.() ?? [] })) {
+      throw new ProtectionError(protectionMessage({ bypassSent: Boolean(bypass) }));
+    }
+    return res;
+  };
   const post = (path, body, cookie, originHeader = origin) =>
     req(path, {
       method: "POST",
@@ -92,16 +123,11 @@ async function main() {
       body: JSON.stringify(body),
     });
   const json = async (res) => res.json().catch(() => null);
-  const protectedByVercel = (res) => res.status === 401 && /vercel/i.test(res.headers.get("server") ?? "") && !res.headers.get("content-type")?.includes("json");
 
   console.log(`Smoke test: ${origin}  (${write ? "with writes" : "read-only"})\n`);
 
   // 1. health
   const health = await req("/api/health");
-  if (protectedByVercel(health)) {
-    record("deployment reachable", false, "Vercel Deployment Protection is blocking requests; set VERCEL_AUTOMATION_BYPASS_SECRET");
-    process.exit(1);
-  }
   const hb = await json(health);
   record("health: database up, schema migrated", health.status === 200 && hb?.status === "ok" && hb?.database === "up" && hb?.schema === "ok",
     `HTTP ${health.status} ${hb ? `status=${hb.status} database=${hb.database} schema=${hb.schema ?? "-"}` : ""}`);
@@ -171,6 +197,11 @@ async function main() {
 
 if (isMainModule(import.meta.url)) {
   main().catch((e) => {
+    if (e?.constructor?.name === "ProtectionError") {
+      console.log(`FAIL  the request reached Vercel Deployment Protection, not the application - ${e.message}`);
+      console.log("\nTesting stopped here. Checks printed above this line (if any) ran against the app; everything after it was NOT tested.");
+      process.exit(1);
+    }
     stderr.write(`Smoke test could not run: ${e instanceof Error ? e.message : String(e)}\n`);
     process.exit(1);
   });
