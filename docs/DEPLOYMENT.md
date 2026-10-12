@@ -97,7 +97,7 @@ Use `dfk_app` in `DATABASE_URL`. Keep the owner role only in `DIRECT_URL`. If a 
 ### 4b. Generate the secrets locally
 
 ```bash
-npm run hash-password -- 'a-long-unique-password-for-this-environment'   # prints scrypt$...  (this is ADMIN_PASSWORD_HASH)
+npm run hash-password          # hidden prompt (asked twice); prints scrypt$...  (this is ADMIN_PASSWORD_HASH)
 openssl rand -base64 48                                                 # this is SESSION_SECRET
 ```
 
@@ -199,6 +199,15 @@ Do these on the Preview deployment, in order. Stop at the first failure.
 - [ ] **Browser console** on the login and dashboard pages shows no Content-Security-Policy errors.
 - [ ] **Separation:** the application you created is **not** visible in Production's database (check in the provider console, not by signing in to Production).
 - [ ] **Runtime logs** (`vercel logs --deployment <id> --level error`) show no `Connection terminated` or TLS errors.
+
+**Automated version of the runtime checks.** From your own machine (the password stays local; it is asked for with hidden input and never printed):
+
+```bash
+node scripts/smoke-deployment.mjs https://<preview-url>            # read-only
+node scripts/smoke-deployment.mjs https://<preview-url> --write    # also creates one fictional application
+```
+
+If Vercel Deployment Protection is on, create a Protection Bypass for Automation secret in the project settings and pass it as `VERCEL_AUTOMATION_BYPASS_SECRET` in your shell. The script checks health and schema, protected routes without a session, security headers and CSP nonce, cross-origin refusal, wrong-password handling, real login, session cookie attributes, authenticated access, (with `--write`) create and status change, logout, and that the old cookie is rejected afterwards. It uses 2 of the 5 allowed login attempts per 15 minutes.
 
 Only after all of this passes can the Preview be called working. Production needs its own run of this list.
 

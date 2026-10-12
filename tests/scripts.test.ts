@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ACCEPTED, evaluateAudit } from "../scripts/audit-gate.mjs";
 import { evaluateReport } from "../scripts/assert-no-skips.mjs";
-import { checkEnv, formatReport } from "../scripts/check-env.mjs";
+import { checkEnv, formatReport, migrationBlockers } from "../scripts/check-env.mjs";
+import { checkPageHeaders, checkSessionCookie } from "../scripts/smoke-deployment.mjs";
 
 describe("assert-no-skips (CI gate)", () => {
   it("passes a clean report", () => {
@@ -115,5 +116,57 @@ describe("environment checker", () => {
     expect(out).not.toContain(secret);
     expect(out).not.toContain("hunter2pw");
     expect(out).not.toContain(goodHash);
+  });
+});
+
+describe("migration guard used by the Vercel build", () => {
+  it("allows nothing to happen unless migrations are opted into", () => {
+    expect(migrationBlockers({})).toEqual([]);
+    expect(migrationBlockers({ DATABASE_URL: "postgresql://x" })).toEqual([]);
+  });
+  it("requires DIRECT_URL and never falls back to the pooled DATABASE_URL", () => {
+    expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL: "postgresql://pooled" }).join()).toMatch(/requires DIRECT_URL/);
+    expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DIRECT_URL: "   " }).join()).toMatch(/requires DIRECT_URL/);
+    expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DIRECT_URL: "postgresql://direct" })).toEqual([]);
+  });
+  it("refuses to migrate production from a build unless explicitly overridden", () => {
+    const env = { RUN_DB_MIGRATIONS: "1", DIRECT_URL: "postgresql://direct", VERCEL_ENV: "production" };
+    expect(migrationBlockers(env).join()).toMatch(/production database/);
+    expect(migrationBlockers({ ...env, ALLOW_PRODUCTION_MIGRATIONS: "1" })).toEqual([]);
+    expect(migrationBlockers({ ...env, VERCEL_ENV: "preview" })).toEqual([]);
+  });
+});
+
+describe("smoke-test validators", () => {
+  const goodCookie = "__Host-dfk_admin_session=abc.def; Max-Age=28800; Path=/; HttpOnly; Secure; SameSite=strict";
+  it("accepts the production cookie", () => {
+    expect(checkSessionCookie(goodCookie, { https: true })).toEqual([]);
+  });
+  it("accepts the plain dev cookie over http", () => {
+    expect(checkSessionCookie("dfk_admin_session=abc; Max-Age=28800; Path=/; HttpOnly; SameSite=strict", { https: false })).toEqual([]);
+  });
+  it("flags each weakness", () => {
+    const bad = checkSessionCookie("dfk_admin_session=abc; Domain=example.com; Path=/x; SameSite=lax; Max-Age=999999", { https: true });
+    expect(bad.join("\n")).toMatch(/__Host-/);
+    expect(bad.join("\n")).toMatch(/HttpOnly/);
+    expect(bad.join("\n")).toMatch(/Secure/);
+    expect(bad.join("\n")).toMatch(/SameSite/);
+    expect(bad.join("\n")).toMatch(/Path/);
+    expect(bad.join("\n")).toMatch(/Domain/);
+    expect(bad.join("\n")).toMatch(/lifetime/);
+  });
+  const goodHeaders: Record<string, string> = {
+    "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-AbC123+/=' 'strict-dynamic'; frame-ancestors 'none'",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "strict-transport-security": "max-age=63072000; includeSubDomains",
+  };
+  it("accepts good page headers and rejects weak ones", () => {
+    expect(checkPageHeaders((h) => goodHeaders[h], { https: true })).toEqual([]);
+    const weak = checkPageHeaders((h) => ({ "content-security-policy": "script-src 'unsafe-inline'", "x-powered-by": "Next.js" } as Record<string, string>)[h], { https: true });
+    expect(weak.join("\n")).toMatch(/nonce/);
+    expect(weak.join("\n")).toMatch(/unsafe/);
+    expect(weak.join("\n")).toMatch(/X-Powered-By/);
+    expect(weak.join("\n")).toMatch(/HSTS/);
   });
 });

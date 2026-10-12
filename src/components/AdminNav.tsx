@@ -9,11 +9,17 @@ export function AdminNav({ user }: { user: string }) {
   const [error, setError] = useState("");
   async function logout() {
     setError("");
-    const res = await fetch("/api/admin/logout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/admin/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+    } catch {
+      setError("Sign out failed (network error). Try again.");
+      return;
+    }
     // Only leave the page if the server confirmed it ended the session.
     if (!res.ok) {
       setError("Sign out failed. Try again.");

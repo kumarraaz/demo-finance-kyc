@@ -17,12 +17,19 @@ export function StatusForm({ applicationId, options }: { applicationId: number; 
     setBusy(true);
     setError("");
     const f = new FormData(e.currentTarget);
-    const res = await fetch(`/api/admin/applications/${applicationId}/status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ toStatus: f.get("toStatus"), note: f.get("note") }),
-    });
-    setBusy(false);
+    let res: Response;
+    try {
+      res = await fetch(`/api/admin/applications/${applicationId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toStatus: f.get("toStatus"), note: f.get("note") }),
+      });
+    } catch {
+      setError("Network error. Try again.");
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (res.ok) {
       (e.target as HTMLFormElement).reset();
       router.refresh();

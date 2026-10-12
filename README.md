@@ -83,7 +83,7 @@ Put the URL in `.env.local` as `DATABASE_URL` (and `DIRECT_URL` if you like). Bo
 
 ```bash
 npm run db:migrate:deploy                                # apply migrations
-npm run hash-password -- 'a-long-password-you-choose'    # paste output into ADMIN_PASSWORD_HASH (see the $ warning below)
+npm run hash-password                                    # asks for the password with hidden input; prints the hash for ADMIN_PASSWORD_HASH (see the $ warning below)
 openssl rand -base64 48                                  # paste into SESSION_SECRET
 npm run dev
 ```

@@ -103,6 +103,25 @@ export function checkEnv(env, target = "local") {
   return { errors, warnings, ok };
 }
 
+/**
+ * Conditions that must stop a build from running `prisma migrate deploy`.
+ * Migrations need the DIRECT (non-pooled) connection: never fall back to DATABASE_URL,
+ * which is the pooled runtime URL.
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]} reasons to refuse (empty = allowed)
+ */
+export function migrationBlockers(env) {
+  if (env.RUN_DB_MIGRATIONS !== "1") return [];
+  const reasons = [];
+  if (!env.DIRECT_URL || !env.DIRECT_URL.trim()) {
+    reasons.push("RUN_DB_MIGRATIONS=1 requires DIRECT_URL (the direct, non-pooled connection). It will not fall back to DATABASE_URL.");
+  }
+  if (env.VERCEL_ENV === "production" && env.ALLOW_PRODUCTION_MIGRATIONS !== "1") {
+    reasons.push("Refusing to migrate the production database during a build. Migrate production manually, or set ALLOW_PRODUCTION_MIGRATIONS=1 to override.");
+  }
+  return reasons;
+}
+
 export function formatReport({ errors, warnings, ok }) {
   const lines = [];
   for (const m of ok) lines.push(`  ok    ${m}`);

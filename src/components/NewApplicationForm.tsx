@@ -16,18 +16,25 @@ export function NewApplicationForm() {
     setErrors({});
     setMessage("");
     const f = new FormData(e.currentTarget);
-    const res = await fetch("/api/admin/applications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        applicantName: f.get("applicantName"),
-        email: f.get("email"),
-        loanProduct: f.get("loanProduct"),
-        requestedAmount: Number(f.get("requestedAmount")),
-        purpose: f.get("purpose"),
-      }),
-    });
-    setBusy(false);
+    let res: Response;
+    try {
+      res = await fetch("/api/admin/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          applicantName: f.get("applicantName"),
+          email: f.get("email"),
+          loanProduct: f.get("loanProduct"),
+          requestedAmount: Number(f.get("requestedAmount")),
+          purpose: f.get("purpose"),
+        }),
+      });
+    } catch {
+      setMessage("Network error. Try again.");
+      return;
+    } finally {
+      setBusy(false);
+    }
     const data = await res.json().catch(() => null);
     if (res.status === 201) {
       router.push(`/admin/applications/${data.application.id}`);

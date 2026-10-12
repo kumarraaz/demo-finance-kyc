@@ -4,3 +4,4 @@ export function checkEnv(
   target?: "local" | "preview" | "production",
 ): EnvReport;
 export function formatReport(report: EnvReport): string;
+export function migrationBlockers(env: Record<string, string | undefined>): string[];

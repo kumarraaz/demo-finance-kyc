@@ -13,12 +13,20 @@ export function LoginForm() {
     setBusy(true);
     setError("");
     const form = new FormData(e.currentTarget);
-    const res = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: form.get("username"), password: form.get("password") }),
-    });
-    setBusy(false);
+    let res: Response;
+    try {
+      res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: form.get("username"), password: form.get("password") }),
+      });
+    } catch {
+      // Network failure: show it, and never leave the button stuck on "Signing in...".
+      setError("Network error. Try again.");
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (res.ok) {
       router.push("/admin");
       router.refresh();

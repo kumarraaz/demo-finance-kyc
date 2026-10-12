@@ -1,14 +1,14 @@
 // Build entry point for Vercel (package.json "vercel-build").
 //
 // Migrations are OPT-IN so that a build can never change a database by accident:
-//   RUN_DB_MIGRATIONS=1               -> run `prisma migrate deploy` before building
+//   RUN_DB_MIGRATIONS=1               -> run `prisma migrate deploy` before building (requires DIRECT_URL)
 //   VERCEL_ENV=production additionally requires ALLOW_PRODUCTION_MIGRATIONS=1
 //
 // Recommended: set RUN_DB_MIGRATIONS=1 on the Preview environment only, with a
 // DIRECT_URL that points at the PREVIEW database. Apply production migrations
 // deliberately (see README). This script never prints connection strings.
 import { spawnSync } from "node:child_process";
-import { checkEnv, formatReport } from "./check-env.mjs";
+import { checkEnv, formatReport, migrationBlockers } from "./check-env.mjs";
 
 function run(args) {
   const result = spawnSync("npx", args, { stdio: "inherit" });
@@ -25,12 +25,9 @@ console.log(`Environment check (${target}):`);
 console.log(formatReport(checkEnv(process.env, target)));
 
 if (process.env.RUN_DB_MIGRATIONS === "1") {
-  if (!process.env.DIRECT_URL && !process.env.DATABASE_URL) {
-    console.error("RUN_DB_MIGRATIONS=1 but neither DIRECT_URL nor DATABASE_URL is set. Refusing to continue.");
-    process.exit(1);
-  }
-  if (process.env.VERCEL_ENV === "production" && process.env.ALLOW_PRODUCTION_MIGRATIONS !== "1") {
-    console.error("Refusing to migrate the production database during a build. Set ALLOW_PRODUCTION_MIGRATIONS=1 to override, or migrate manually.");
+  const blockers = migrationBlockers(process.env);
+  if (blockers.length > 0) {
+    for (const reason of blockers) console.error(reason);
     process.exit(1);
   }
   console.log(`Applying database migrations (VERCEL_ENV=${process.env.VERCEL_ENV ?? "local"})...`);
