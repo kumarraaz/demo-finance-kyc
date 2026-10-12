@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { migrationBlockers, checkEnv, formatReport } from "../scripts/check-env.mjs";
-import { describeDbHost, migrationTargetBlockers } from "../scripts/lib/migration-target.mjs";
+import { describeDbHost, migrationTargetBlockers, targetVerificationBlockers } from "../scripts/lib/migration-target.mjs";
 
 // The Preview branch's endpoint, and the Production endpoint (the one that must never be migrated
 // by a Preview build). These are ids, not credentials.
@@ -97,6 +97,52 @@ describe("migration-target guard (RUN_DB_MIGRATIONS=1 must prove which database 
     const mismatch = migrationBlockers({ ...base, DATABASE_URL_UNPOOLED: url(PRODUCTION, { pw: "hunter2-pw" }), EXPECTED_DB_ENDPOINT: PREVIEW }).join("\n");
     for (const leak of ["hunter2-pw", "neondb_owner", "postgresql://", ".neon.tech"]) expect(mismatch).not.toContain(leak);
   });
+});
+
+describe("verify-only mode (EXPECTED_DB_ENDPOINT set, migrations off)", () => {
+  it("does nothing when EXPECTED_DB_ENDPOINT is not set", () => {
+    expect(targetVerificationBlockers({ DATABASE_URL_UNPOOLED: url(PRODUCTION) })).toEqual([]);
+  });
+  it("passes when both URLs point at the expected endpoint", () => {
+    const env = { DATABASE_URL: url(PREVIEW, { pooled: true }), DATABASE_URL_UNPOOLED: url(PREVIEW), EXPECTED_DB_ENDPOINT: PREVIEW };
+    expect(targetVerificationBlockers(env)).toEqual([]);
+  });
+  it("fails when the direct URL points at Production", () => {
+    const env = { DATABASE_URL: url(PREVIEW, { pooled: true }), DATABASE_URL_UNPOOLED: url(PRODUCTION), EXPECTED_DB_ENDPOINT: PREVIEW };
+    expect(targetVerificationBlockers(env).join()).toMatch(/mismatch/);
+  });
+  it("fails when the app's pooled DATABASE_URL points at a different endpoint than the direct URL", () => {
+    const env = { DATABASE_URL: url(PRODUCTION, { pooled: true }), DATABASE_URL_UNPOOLED: url(PREVIEW), EXPECTED_DB_ENDPOINT: PREVIEW };
+    const out = targetVerificationBlockers(env).join();
+    expect(out).toMatch(/DATABASE_URL points at endpoint "ep-mute-scene-b5d6aqrh"/);
+  });
+  it("fails when there is no direct URL to verify", () => {
+    expect(targetVerificationBlockers({ DATABASE_URL: url(PREVIEW, { pooled: true }), EXPECTED_DB_ENDPOINT: PREVIEW }).join()).toMatch(/no direct URL/);
+  });
+  it("also protects the migrating path from a runtime/migration split", () => {
+    const env = { ...base, DATABASE_URL: url(PRODUCTION, { pooled: true }), DATABASE_URL_UNPOOLED: url(PREVIEW), EXPECTED_DB_ENDPOINT: PREVIEW };
+    expect(migrationBlockers(env).join()).toMatch(/DATABASE_URL points at endpoint/);
+  });
+  it("the real build script fails (without migrating) when the target does not match", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync(process.execPath, ["scripts/vercel-build.mjs"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      timeout: 90_000,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        VERCEL_ENV: "preview",
+        DATABASE_URL: url(PREVIEW, { pooled: true }),
+        DATABASE_URL_UNPOOLED: url(PRODUCTION, { pw: "leakme-pw" }),
+        EXPECTED_DB_ENDPOINT: PREVIEW,
+      } as unknown as NodeJS.ProcessEnv,
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/Migration target mismatch/);
+    expect(r.stdout + r.stderr).not.toMatch(/Creating an optimized production build/);
+    expect(r.stdout + r.stderr).not.toContain("leakme-pw");
+  }, 100_000);
 });
 
 describe("checkEnv reports the target proof", () => {

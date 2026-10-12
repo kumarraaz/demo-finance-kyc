@@ -64,5 +64,30 @@ export function migrationTargetBlockers(env) {
       `Migration target mismatch: ${direct.name} points at endpoint "${target.endpointId}" but ${EXPECTED_ENDPOINT_VAR} is "${raw}". Refusing to migrate.`,
     );
   }
+  // The running app must use the same database that is being verified/migrated. Compare the pooled
+  // runtime URL too, when both look like Neon endpoint ids (other providers have unrelated host names).
+  const runtimeUrl = typeof env.DATABASE_URL === "string" ? env.DATABASE_URL.trim() : "";
+  const runtime = runtimeUrl ? describeDbHost(runtimeUrl) : null;
+  if (runtime && runtime.endpointId.startsWith("ep-") && target.endpointId.startsWith("ep-") && runtime.endpointId !== target.endpointId) {
+    reasons.push(
+      `DATABASE_URL points at endpoint "${runtime.endpointId}" but ${direct.name} points at "${target.endpointId}": the app would use a different database than the one being verified.`,
+    );
+  }
   return reasons;
+}
+
+/**
+ * Verification without migrating: when EXPECTED_DB_ENDPOINT is set, a build must prove the URLs point
+ * at it even if RUN_DB_MIGRATIONS is off. A READY deployment then means "the target matches".
+ * Returns [] when EXPECTED_DB_ENDPOINT is not set (nothing to verify).
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]}
+ */
+export function targetVerificationBlockers(env) {
+  const set = typeof env[EXPECTED_ENDPOINT_VAR] === "string" && env[EXPECTED_ENDPOINT_VAR].trim() !== "";
+  if (!set) return [];
+  if (!resolveDirectUrl(env)) {
+    return [`${EXPECTED_ENDPOINT_VAR} is set but there is no direct URL (DIRECT_URL or DATABASE_URL_UNPOOLED) to verify.`];
+  }
+  return migrationTargetBlockers(env);
 }

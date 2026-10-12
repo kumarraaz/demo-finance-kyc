@@ -11,7 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { checkEnv, formatReport, migrationBlockers } from "./check-env.mjs";
 import { resolveDirectUrl } from "./lib/direct-url.mjs";
-import { describeDbHost } from "./lib/migration-target.mjs";
+import { describeDbHost, targetVerificationBlockers } from "./lib/migration-target.mjs";
 
 function run(args) {
   const result = spawnSync("npx", args, { stdio: "inherit" });
@@ -43,6 +43,17 @@ if (process.env.RUN_DB_MIGRATIONS === "1") {
   run(["prisma", "migrate", "deploy"]);
 } else {
   console.log("Skipping database migrations (RUN_DB_MIGRATIONS is not 1).");
+  // Verify-only mode: with EXPECTED_DB_ENDPOINT set, still prove where the URLs point (no database is touched).
+  // A READY deployment therefore means the target matches; a mismatch fails the build.
+  const problems = targetVerificationBlockers(process.env);
+  if (problems.length > 0) {
+    for (const reason of problems) console.error(reason);
+    process.exit(1);
+  }
+  if (process.env.EXPECTED_DB_ENDPOINT?.trim()) {
+    const direct = resolveDirectUrl(process.env);
+    console.log(`Database target verified (no migration run): ${direct?.name} -> endpoint ${describeDbHost(direct?.value ?? "")?.endpointId}, matches EXPECTED_DB_ENDPOINT.`);
+  }
 }
 
 run(["next", "build"]);
