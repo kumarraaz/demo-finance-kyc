@@ -1,0 +1,54 @@
+{
+  "name": "demo-finance-kyc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DEMO ONLY: simulated finance KYC prototype. No real KYC, no real PAN/Aadhaar, no real loan decisions.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "hash-password": "node scripts/hash-password.mjs",
+    "postinstall": "prisma generate",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:check-drift": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
+    "vercel-build": "node scripts/vercel-build.mjs",
+    "test:ci": "vitest run --reporter=default --reporter=json --outputFile=vitest-results.json && node scripts/assert-no-skips.mjs vitest-results.json",
+    "audit:gate": "node scripts/audit-gate.mjs",
+    "check-env": "node scripts/check-env.mjs"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "@vercel/functions": "^3.9.11",
+    "next": "^16.4.0",
+    "pg": "^8.23.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "dotenv": "^18.0.7",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.0",
+    "prisma": "^7.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "overrides": {
+    "mysql2": "^3.24.5",
+    "deepmerge-ts": "^8.0.2"
+  }
+}

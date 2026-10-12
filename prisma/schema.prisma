@@ -1,0 +1,89 @@
+// DEMO ONLY: simulated finance KYC prototype. Never store real PAN/Aadhaar data.
+//
+// Constraints Prisma cannot express (CHECKs, the append-only triggers, the
+// reference sequence) live in the hand-reviewed SQL inside prisma/migrations.
+// Do not remove them when generating new migrations.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ApplicationStatus {
+  submitted
+  in_review
+  more_info_needed
+  simulated_check_passed
+  simulated_check_failed
+  closed
+
+  @@map("application_status")
+}
+
+enum LoanProduct {
+  personal
+  education
+  home
+
+  @@map("loan_product")
+}
+
+model Application {
+  id              Int               @id @default(autoincrement())
+  reference       String            @unique
+  applicantName   String            @map("applicant_name")
+  email           String
+  loanProduct     LoanProduct       @map("loan_product")
+  requestedAmount Int               @map("requested_amount")
+  purpose         String            @default("")
+  status          ApplicationStatus
+  // Always true. A CHECK constraint stops anything else from being stored.
+  isSimulated     Boolean           @default(true) @map("is_simulated")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime          @default(now()) @map("updated_at") @db.Timestamptz(3)
+  history         StatusHistory[]
+
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("applications")
+}
+
+// Append-only audit trail. Triggers reject UPDATE, DELETE and TRUNCATE.
+model StatusHistory {
+  id            Int                @id @default(autoincrement())
+  applicationId Int                @map("application_id")
+  fromStatus    ApplicationStatus? @map("from_status")
+  toStatus      ApplicationStatus  @map("to_status")
+  note          String             @default("")
+  changedBy     String             @map("changed_by")
+  changedAt     DateTime           @default(now()) @map("changed_at") @db.Timestamptz(3)
+  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
+  @@index([applicationId, id])
+  @@map("status_history")
+}
+
+// Server-side admin sessions so logout and expiry are enforced, not just cookie deletion.
+model AdminSession {
+  id        String    @id
+  username  String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@map("admin_sessions")
+}
+
+// Shared (cross-instance) fixed-window counters, used for login rate limiting.
+model RateLimit {
+  key         String   @id
+  count       Int
+  windowStart DateTime @map("window_start") @db.Timestamptz(3)
+
+  @@map("rate_limits")
+}
