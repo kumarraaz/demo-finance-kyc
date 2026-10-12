@@ -8,6 +8,8 @@
 //
 // Exit code 1 if there are errors (or warnings with --strict).
 
+import { resolveDirectUrl } from "./lib/direct-url.mjs";
+
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 /**
@@ -49,24 +51,31 @@ export function checkEnv(env, target = "local") {
     return u;
   };
   const db = parseDb("DATABASE_URL");
-  const direct = parseDb("DIRECT_URL");
+  // The direct (non-pooled) URL: DIRECT_URL, else DATABASE_URL_UNPOOLED. Only the NAME is ever reported.
+  const resolved = resolveDirectUrl(env);
+  const direct = resolved ? parseDb(resolved.name) : null;
   if (!db) {
     if (!isSet("DATABASE_URL")) errors.push("DATABASE_URL is not set");
   } else ok.push("DATABASE_URL is set and well-formed");
 
   const looksPooled = (u) => u && (/pooler/i.test(u.hostname) || u.port === "6543");
   const willMigrate = env.RUN_DB_MIGRATIONS === "1";
-  if (!direct) {
-    if (willMigrate) errors.push("RUN_DB_MIGRATIONS=1 but DIRECT_URL is not set");
-    else if (target !== "local") warnings.push("DIRECT_URL is not set; migrations would fall back to DATABASE_URL");
+  if (!resolved) {
+    if (willMigrate) errors.push("RUN_DB_MIGRATIONS=1 but DIRECT_URL is not set (and there is no DATABASE_URL_UNPOOLED fallback)");
+    else if (target !== "local") warnings.push("No direct URL (DIRECT_URL or DATABASE_URL_UNPOOLED) is set; migrations would fall back to DATABASE_URL");
   } else {
-    ok.push("DIRECT_URL is set and well-formed");
+    ok.push(`${resolved.name} is set and well-formed`);
+    if (resolved.name === "DATABASE_URL_UNPOOLED") {
+      ok.push("DATABASE_URL_UNPOOLED is used as the direct URL because DIRECT_URL is not set");
+    } else if (isSet("DATABASE_URL_UNPOOLED")) {
+      ok.push("DIRECT_URL takes priority over DATABASE_URL_UNPOOLED");
+    }
     if (looksPooled(direct)) {
-      warnings.push("DIRECT_URL looks like a POOLED connection (host contains 'pooler' or port is 6543); migrations need the direct one");
+      warnings.push(`${resolved.name} looks like a POOLED connection (host contains 'pooler' or port is 6543); migrations need the direct one`);
     }
   }
   if (db && direct && db.href === direct.href) {
-    warnings.push("DIRECT_URL and DATABASE_URL are identical; fine only if the provider has no pooler");
+    warnings.push(`${resolved.name} and DATABASE_URL are identical; fine only if the provider has no pooler`);
   }
   if (db && target === "production" && looksPooled(db) === false && db.hostname && !LOCAL_HOSTS.has(db.hostname)) {
     warnings.push("DATABASE_URL does not look pooled; on serverless prefer the provider's pooled connection string");
@@ -105,16 +114,16 @@ export function checkEnv(env, target = "local") {
 
 /**
  * Conditions that must stop a build from running `prisma migrate deploy`.
- * Migrations need the DIRECT (non-pooled) connection: never fall back to DATABASE_URL,
- * which is the pooled runtime URL.
+ * Migrations need the DIRECT (non-pooled) connection (DIRECT_URL, else DATABASE_URL_UNPOOLED):
+ * never fall back to DATABASE_URL, which is the pooled runtime URL.
  * @param {Record<string, string | undefined>} env
  * @returns {string[]} reasons to refuse (empty = allowed)
  */
 export function migrationBlockers(env) {
   if (env.RUN_DB_MIGRATIONS !== "1") return [];
   const reasons = [];
-  if (!env.DIRECT_URL || !env.DIRECT_URL.trim()) {
-    reasons.push("RUN_DB_MIGRATIONS=1 requires DIRECT_URL (the direct, non-pooled connection). It will not fall back to DATABASE_URL.");
+  if (!resolveDirectUrl(env)) {
+    reasons.push("RUN_DB_MIGRATIONS=1 requires DIRECT_URL (or DATABASE_URL_UNPOOLED), the direct non-pooled connection. It will not fall back to DATABASE_URL.");
   }
   if (env.VERCEL_ENV === "production" && env.ALLOW_PRODUCTION_MIGRATIONS !== "1") {
     reasons.push("Refusing to migrate the production database during a build. Migrate production manually, or set ALLOW_PRODUCTION_MIGRATIONS=1 to override.");

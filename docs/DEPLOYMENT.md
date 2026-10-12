@@ -17,7 +17,7 @@ Everything below that was checked locally is marked **(tested locally)**. Anythi
 | --- | --- | --- |
 | Database provider | Any hosted PostgreSQL 16 (Neon, Supabase, RDS, ...). Steps below are provider-neutral, with a Neon-via-Vercel example. | The code only needs standard PostgreSQL. Tested on 16 only. |
 | Preview vs Production | **Two separate databases** with different credentials. Best: two separate provider projects. Acceptable: two separate database branches. Never one shared database. | A Preview build can run migrations and holds test data. Production must be unreachable from Preview credentials. |
-| Pooled connection | Use the provider's **pooled** string for `DATABASE_URL` and the **direct** string for `DIRECT_URL`. | Serverless functions open many short connections. Migrations use advisory locks that poolers can break. |
+| Pooled connection | Use the provider's **pooled** string for `DATABASE_URL` and the **direct** string for `DIRECT_URL` (or `DATABASE_URL_UNPOOLED`, which the Neon integration sets and the app accepts as the same thing). | Serverless functions open many short connections. Migrations use advisory locks that poolers can break. |
 
 ---
 
@@ -28,12 +28,12 @@ Everything below that was checked locally is marked **(tested locally)**. Anythi
 1. In the provider's console, create a new PostgreSQL project/database. Name it so the environment is obvious, e.g. `dfk-preview` and `dfk-production`.
 2. Choose a region close to where the Vercel functions run (Vercel project setting "Function Region"). **(verify)**
 3. Create credentials. Preferred: **two roles** per database:
-   - an **owner/migrator** role, used only for `DIRECT_URL`;
+   - an **owner/migrator** role, used only for the direct URL (`DIRECT_URL` / `DATABASE_URL_UNPOOLED`);
    - a **runtime** role with only the privileges the app needs, used for `DATABASE_URL` (SQL in [section 3](#3-optional-hardening-a-least-privilege-runtime-role)).
    If your provider only gives you one role, use it for both and accept that the runtime can drop the audit triggers.
 4. Copy two connection strings from the provider console:
    - **pooled** (host usually contains `pooler`, or port `6543`) -> `DATABASE_URL`
-   - **direct** (no pooler) -> `DIRECT_URL`
+   - **direct** (no pooler) -> `DIRECT_URL` (or `DATABASE_URL_UNPOOLED`)
 5. Make sure both strings end with `sslmode=verify-full`. Add it if the provider gave `sslmode=require`. See [TLS note](#tls-note).
 6. Do not paste these strings into chat, issues, commits or the README. You will paste them only into Vercel (step 4) or your shell.
 
@@ -60,7 +60,9 @@ vercel integration resource connect dfk-production -e production
 Check afterwards in Vercel > Project > Settings > Environment Variables that:
 
 - the Preview variables point at the Preview database only, and the Production variables at the Production database only;
-- `DATABASE_URL` is the **pooled** string and you have a `DIRECT_URL` with the **unpooled** string. The integration may use different variable names (for example `DATABASE_URL_UNPOOLED`). I could not confirm the names from Vercel's docs. If they differ, add `DIRECT_URL` yourself;
+- `DATABASE_URL` is the **pooled** string and `DATABASE_URL_UNPOOLED` is the **direct** one. Confirmed on this project: the Neon integration creates exactly these two variables (plus a comment saying it manages them). **You do not need to add `DIRECT_URL`**: when it is absent, migrations use `DATABASE_URL_UNPOOLED` (checked with the real Prisma CLI). If you do set `DIRECT_URL`, it takes priority;
+- **the integration only fills the environments you connected it to.** When this project was checked, it was connected to Production and Development only, so Preview had no database variables at all. Give Preview its **own** database or branch (above) and connect it to Preview only;
+- **never let Preview use the Production database.** The same `DATABASE_URL_UNPOOLED` variable that the app would use for Preview migrations would then point at Production, and a Preview build with `RUN_DB_MIGRATIONS=1` would migrate it. The build log prints the *name* of the variable used for migrations (never its value);
 - `.env.local` (created by `vercel install`) is git-ignored. It must never be committed.
 
 ---
@@ -112,7 +114,7 @@ These are every variable the code reads (checked by searching the source).
 | Variable | Preview | Production | Notes |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | **required** | **required** | Pooled string, `sslmode=verify-full`. Different database per environment. |
-| `DIRECT_URL` | required if `RUN_DB_MIGRATIONS=1` | required for manual migrations | Direct string, owner role. Never shared across environments. Not used by the running app. |
+| Direct URL: `DIRECT_URL` **or** `DATABASE_URL_UNPOOLED` | required if `RUN_DB_MIGRATIONS=1` | required for manual migrations | Direct (non-pooled) string, owner role. `DIRECT_URL` wins if both exist. With the Neon integration you normally set neither by hand: it provides `DATABASE_URL_UNPOOLED`. Never shared across environments. Not used by the running app. |
 | `ADMIN_USERNAME` | **required** | **required** | Avoid `admin` in Production. |
 | `ADMIN_PASSWORD_HASH` | **required** | **required** | Output of `npm run hash-password`. Not the plain password. |
 | `SESSION_SECRET` | **required** | **required** | 32+ characters. Different per environment. Changing it signs everyone out. |
@@ -130,14 +132,14 @@ CLI route (prompts for the value, so it does not land in shell history):
 
 ```bash
 vercel env add DATABASE_URL preview --sensitive
-vercel env add DIRECT_URL preview --sensitive
+# vercel env add DIRECT_URL preview --sensitive    # only if your provider does not set DATABASE_URL_UNPOOLED for you
 vercel env add ADMIN_USERNAME preview
 vercel env add ADMIN_PASSWORD_HASH preview --sensitive
 vercel env add SESSION_SECRET preview --sensitive
 vercel env add RUN_DB_MIGRATIONS preview            # value: 1
 
 vercel env add DATABASE_URL production --sensitive
-vercel env add DIRECT_URL production --sensitive
+# vercel env add DIRECT_URL production --sensitive   # only if your provider does not set DATABASE_URL_UNPOOLED for you
 vercel env add ADMIN_USERNAME production
 vercel env add ADMIN_PASSWORD_HASH production --sensitive
 vercel env add SESSION_SECRET production --sensitive
@@ -158,13 +160,13 @@ Migration files live in `prisma/migrations`. Prisma takes a PostgreSQL advisory 
 **Preview or Production (manual).** From a trusted machine, with the direct owner URL for the target database in your shell only:
 
 ```bash
-export DIRECT_URL='<paste the DIRECT connection string for THIS environment>'
+export DIRECT_URL='<paste the DIRECT connection string for THIS environment>'   # takes priority over DATABASE_URL_UNPOOLED
 npm run db:migrate:status      # shows what is pending
 npm run db:migrate:deploy      # applies it
 unset DIRECT_URL
 ```
 
-Before any Production migration: take a backup/snapshot in the provider console and confirm which database `DIRECT_URL` points at. The build refuses to migrate production unless `ALLOW_PRODUCTION_MIGRATIONS=1` is also set (**tested locally**).
+Before any Production migration: take a backup/snapshot in the provider console and confirm which database the direct URL points at. The build refuses to migrate production unless `ALLOW_PRODUCTION_MIGRATIONS=1` is also set (**tested locally**).
 
 `vercel env pull` / `vercel env run` may not expose Sensitive variables (they are non-readable by design). Do not rely on them for migrations. Copy the connection string from the provider console instead.
 

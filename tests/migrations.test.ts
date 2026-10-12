@@ -73,6 +73,53 @@ describe.skipIf(!hasTestDb)("prisma migrations (real CLI, PostgreSQL)", () => {
     expect(r.code).toBe(0);
   });
 
+  // The Neon integration for Vercel provides DATABASE_URL_UNPOOLED, not DIRECT_URL. These run the
+  // REAL Prisma CLI to prove which variable `prisma migrate` actually connects with.
+  describe("which URL the Prisma CLI uses (DIRECT_URL > DATABASE_URL_UNPOOLED > DATABASE_URL)", () => {
+    const BAD = "postgresql://nobody:nopass@127.0.0.1:1/none"; // nothing listens on port 1
+    const cliWith = (vars: Record<string, string | undefined>) => {
+      const base = { ...process.env };
+      for (const k of ["DIRECT_URL", "DATABASE_URL_UNPOOLED", "DATABASE_URL"]) delete base[k];
+      const saved = env;
+      env = { ...base, ...Object.fromEntries(Object.entries(vars).filter(([, v]) => v !== undefined)) } as NodeJS.ProcessEnv;
+      try {
+        return prisma("migrate", "status");
+      } finally {
+        env = saved;
+      }
+    };
+    const GOOD = () => urlWithSchema(TEST_DATABASE_URL!, schema);
+
+    it("uses DATABASE_URL_UNPOOLED when DIRECT_URL is absent (the pooled DATABASE_URL is bad)", () => {
+      const r = cliWith({ DATABASE_URL_UNPOOLED: GOOD(), DATABASE_URL: BAD });
+      expect(r.out).toMatch(/up to date/i);
+      expect(r.code).toBe(0);
+    });
+    it("DIRECT_URL wins over a bad DATABASE_URL_UNPOOLED", () => {
+      const r = cliWith({ DIRECT_URL: GOOD(), DATABASE_URL_UNPOOLED: BAD, DATABASE_URL: BAD });
+      expect(r.out).toMatch(/up to date/i);
+      expect(r.code).toBe(0);
+    });
+    it("DIRECT_URL is still used even when DATABASE_URL_UNPOOLED is good (a bad DIRECT_URL fails)", () => {
+      const r = cliWith({ DIRECT_URL: BAD, DATABASE_URL_UNPOOLED: GOOD(), DATABASE_URL: GOOD() });
+      expect(r.code).not.toBe(0);
+      expect(r.out).toMatch(/P1001|reach/i);
+    });
+    it("a blank DIRECT_URL counts as absent", () => {
+      const r = cliWith({ DIRECT_URL: "   ", DATABASE_URL_UNPOOLED: GOOD(), DATABASE_URL: BAD });
+      expect(r.out).toMatch(/up to date/i);
+    });
+    it("keeps the existing local behaviour: DATABASE_URL alone still works", () => {
+      const r = cliWith({ DATABASE_URL: GOOD() });
+      expect(r.out).toMatch(/up to date/i);
+    });
+    it("fails clearly when no URL is configured at all", () => {
+      const r = cliWith({});
+      expect(r.code).not.toBe(0);
+      expect(r.out).toMatch(/Connection url is empty/i);
+    });
+  });
+
   it("creates the protections Prisma cannot model: triggers, CHECKs, sequence", async () => {
     const found = await withPgClient(async (c) => {
       const q = async (sql: string) => (await c.query(sql, [schema])).rows.map((r) => Object.values(r)[0] as string);

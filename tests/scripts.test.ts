@@ -3,6 +3,7 @@ import { ACCEPTED, evaluateAudit } from "../scripts/audit-gate.mjs";
 import { evaluateReport } from "../scripts/assert-no-skips.mjs";
 import { checkEnv, formatReport, migrationBlockers } from "../scripts/check-env.mjs";
 import { checkPageHeaders, checkSessionCookie } from "../scripts/smoke-deployment.mjs";
+import { DIRECT_URL_VARS, resolveDirectUrl, resolveMigrationUrl } from "../scripts/lib/direct-url.mjs";
 
 describe("assert-no-skips (CI gate)", () => {
   it("passes a clean report", () => {
@@ -168,5 +169,87 @@ describe("smoke-test validators", () => {
     expect(weak.join("\n")).toMatch(/unsafe/);
     expect(weak.join("\n")).toMatch(/X-Powered-By/);
     expect(weak.join("\n")).toMatch(/HSTS/);
+  });
+});
+
+describe("migration URL resolution: DIRECT_URL, then DATABASE_URL_UNPOOLED, then (local only) DATABASE_URL", () => {
+  const A = "postgresql://a:a@direct.example.com/db";
+  const B = "postgresql://b:b@unpooled.example.com/db";
+  const C = "postgresql://c:c@pooled.example.com/db";
+
+  it("DIRECT_URL always has the highest priority", () => {
+    expect(resolveDirectUrl({ DIRECT_URL: A, DATABASE_URL_UNPOOLED: B })).toEqual({ name: "DIRECT_URL", value: A });
+    expect(resolveMigrationUrl({ DIRECT_URL: A, DATABASE_URL_UNPOOLED: B, DATABASE_URL: C })).toMatchObject({ name: "DIRECT_URL", direct: true });
+  });
+  it("falls back to DATABASE_URL_UNPOOLED when DIRECT_URL is absent", () => {
+    expect(resolveDirectUrl({ DATABASE_URL_UNPOOLED: B })).toEqual({ name: "DATABASE_URL_UNPOOLED", value: B });
+    expect(resolveMigrationUrl({ DATABASE_URL_UNPOOLED: B, DATABASE_URL: C })).toMatchObject({ name: "DATABASE_URL_UNPOOLED", direct: true });
+  });
+  it("treats an empty or whitespace-only DIRECT_URL as absent", () => {
+    for (const blank of ["", "   ", "\n"]) {
+      expect(resolveDirectUrl({ DIRECT_URL: blank, DATABASE_URL_UNPOOLED: B })?.name).toBe("DATABASE_URL_UNPOOLED");
+    }
+  });
+  it("trims stray whitespace around a value", () => {
+    expect(resolveDirectUrl({ DIRECT_URL: `  ${A}\n` })?.value).toBe(A);
+  });
+  it("only ever uses DATABASE_URL (pooled) as a non-direct local fallback", () => {
+    expect(resolveDirectUrl({ DATABASE_URL: C })).toBeNull();
+    expect(resolveMigrationUrl({ DATABASE_URL: C })).toEqual({ name: "DATABASE_URL", value: C, direct: false });
+    expect(resolveMigrationUrl({})).toBeNull();
+  });
+  it("lists exactly the two supported direct-URL variables, DIRECT_URL first", () => {
+    expect([...DIRECT_URL_VARS]).toEqual(["DIRECT_URL", "DATABASE_URL_UNPOOLED"]);
+  });
+
+  describe("build guards accept the Neon integration's variable", () => {
+    const neon = {
+      DATABASE_URL: "postgresql://u:p@ep-x-pooler.example.com/db?sslmode=verify-full",
+      DATABASE_URL_UNPOOLED: "postgresql://u:p@ep-x.example.com/db?sslmode=verify-full",
+      ADMIN_USERNAME: "ops-admin",
+      ADMIN_PASSWORD_HASH: goodHash,
+      SESSION_SECRET: "Xk9".repeat(16) + "abcdefghijklmnop",
+      RUN_DB_MIGRATIONS: "1",
+    };
+    it("migrationBlockers allows migrations with only DATABASE_URL_UNPOOLED", () => {
+      expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL_UNPOOLED: B })).toEqual([]);
+    });
+    it("migrationBlockers still blocks with only the pooled DATABASE_URL, or a blank UNPOOLED", () => {
+      expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL: C }).join()).toMatch(/requires DIRECT_URL \(or DATABASE_URL_UNPOOLED\)/);
+      expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL_UNPOOLED: "  " })).not.toEqual([]);
+    });
+    it("production is still refused even with a valid UNPOOLED URL", () => {
+      const env = { RUN_DB_MIGRATIONS: "1", DATABASE_URL_UNPOOLED: B, VERCEL_ENV: "production" };
+      expect(migrationBlockers(env).join()).toMatch(/production database/);
+    });
+    it("checkEnv: a Neon-style Preview configuration has no errors or warnings and names the variable used", () => {
+      const r = checkEnv(neon, "preview");
+      expect(r.errors).toEqual([]);
+      expect(r.warnings).toEqual([]);
+      expect(r.ok.join("\n")).toMatch(/DATABASE_URL_UNPOOLED is used as the direct URL because DIRECT_URL is not set/);
+    });
+    it("checkEnv: DIRECT_URL is reported as taking priority when both are set", () => {
+      const r = checkEnv({ ...neon, DIRECT_URL: "postgresql://u:p@ep-y.example.com/db?sslmode=verify-full" }, "preview");
+      expect(r.errors).toEqual([]);
+      expect(r.ok.join("\n")).toMatch(/DIRECT_URL takes priority over DATABASE_URL_UNPOOLED/);
+      expect(r.ok.join("\n")).not.toMatch(/used as the direct URL/);
+    });
+    it("checkEnv: still errors when migrations are on and neither direct variable is set", () => {
+      const { DATABASE_URL_UNPOOLED: _drop, ...none } = neon;
+      void _drop;
+      expect(checkEnv(none, "preview").errors.join()).toMatch(/DIRECT_URL is not set/);
+    });
+    it("checkEnv: warns when the UNPOOLED variable actually looks pooled", () => {
+      const r = checkEnv({ ...neon, DATABASE_URL_UNPOOLED: "postgresql://u:p@ep-x-pooler.example.com/db?sslmode=verify-full" }, "preview");
+      expect(r.warnings.join("\n")).toMatch(/DATABASE_URL_UNPOOLED looks like a POOLED connection/);
+    });
+    it("checkEnv: validates TLS on the UNPOOLED URL like any other remote URL", () => {
+      const r = checkEnv({ ...neon, DATABASE_URL_UNPOOLED: "postgresql://u:p@ep-x.example.com/db" }, "preview");
+      expect(r.errors.join()).toMatch(/DATABASE_URL_UNPOOLED points to a remote host but sslmode/);
+    });
+    it("never prints a connection string, host or password", () => {
+      const out = formatReport(checkEnv({ ...neon, DATABASE_URL_UNPOOLED: "postgresql://secretuser:secretpw99@host-unpooled.example.com/db" }, "preview"));
+      for (const leak of ["secretuser", "secretpw99", "host-unpooled.example.com", "postgresql://"]) expect(out).not.toContain(leak);
+    });
   });
 });

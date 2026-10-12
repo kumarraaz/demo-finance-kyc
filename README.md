@@ -46,7 +46,7 @@ There is deliberately no "approved" or "rejected" status. `simulated_check_*` ou
 | File | Role |
 | --- | --- |
 | `prisma/schema.prisma`, `prisma/migrations/` | Data model and SQL migrations (incl. hand-written triggers and CHECKs) |
-| `prisma.config.ts` | Migration connection (`DIRECT_URL`, falling back to `DATABASE_URL`) |
+| `prisma.config.ts`, `scripts/lib/direct-url.mjs` | Migration connection: `DIRECT_URL`, else `DATABASE_URL_UNPOOLED` (set by the Neon integration for Vercel), else `DATABASE_URL` (local only) |
 | `src/lib/db.ts` | Lazy Prisma client (pg adapter). Importing it never connects, so `next build` needs no database |
 | `src/lib/applications.ts` | Create / list / status change (compare-and-set inside a transaction) |
 | `src/lib/admin-session.ts`, `session.ts` | Signed token + server-side session row |
@@ -79,7 +79,7 @@ docker run --name dfk-pg -e POSTGRES_PASSWORD='choose-a-local-password' -e POSTG
 # DATABASE_URL=postgresql://postgres:choose-a-local-password@localhost:5432/dfk
 ```
 
-Put the URL in `.env.local` as `DATABASE_URL` (and `DIRECT_URL` if you like). Both Next.js and the Prisma CLI read `.env.local`; a real environment variable always wins over the file. Then:
+Put the URL in `.env.local` as `DATABASE_URL` (and `DIRECT_URL`, or `DATABASE_URL_UNPOOLED`, if you like). Both Next.js and the Prisma CLI read `.env.local`; a real environment variable always wins over the file. Then:
 
 ```bash
 npm run db:migrate:deploy                                # apply migrations
@@ -120,8 +120,12 @@ Migrations are plain SQL files in `prisma/migrations/`, applied in order by `pri
 | --- | --- |
 | Local | `npm run db:migrate:deploy` |
 | CI | Tests apply every migration to an empty database and check idempotence and drift |
-| Vercel Preview | Opt-in: `RUN_DB_MIGRATIONS=1` on the **Preview** environment only, with a Preview-only `DIRECT_URL`. `scripts/vercel-build.mjs` then runs `prisma migrate deploy` before `next build`; a failed migration fails the build |
-| Vercel Production | **Manual**, from a trusted machine, with the production `DIRECT_URL`. The build refuses to migrate production unless `ALLOW_PRODUCTION_MIGRATIONS=1` is also set |
+| Vercel Preview | Opt-in: `RUN_DB_MIGRATIONS=1` on the **Preview** environment only, with a Preview-only direct URL (`DIRECT_URL`, or the Neon integration's `DATABASE_URL_UNPOOLED`; the build log names which one it used, never its value). `scripts/vercel-build.mjs` then runs `prisma migrate deploy` before `next build`; a failed migration fails the build |
+| Vercel Production | **Manual**, from a trusted machine, with the production direct URL (`DIRECT_URL` or `DATABASE_URL_UNPOOLED`). The build refuses to migrate production unless `ALLOW_PRODUCTION_MIGRATIONS=1` is also set |
+
+**Which URL do migrations use?** First non-blank of `DIRECT_URL`, then `DATABASE_URL_UNPOOLED`. `DIRECT_URL` always wins when both are set. With neither, local commands fall back to `DATABASE_URL`, but a build with `RUN_DB_MIGRATIONS=1` refuses to run (it never migrates through the pooled URL). One shared module (`scripts/lib/direct-url.mjs`) decides this for the Prisma CLI and the build guards, so they cannot disagree.
+
+**Check which database a variable points to before turning migrations on.** The Neon integration writes `DATABASE_URL_UNPOOLED` for every environment it is connected to. If the *Production* Neon resource is ever connected to the *Preview* environment, a Preview build with `RUN_DB_MIGRATIONS=1` would migrate the **Production** database. Keep Preview on its own Neon database or branch (see `docs/DEPLOYMENT.md`).
 
 By default (no flag), a build never touches any database. All previews share one Preview database unless you give each branch its own; a destructive migration in one branch can break another branch's preview.
 
@@ -134,7 +138,7 @@ Short version of the required variables (every one the code reads):
 | Variable | Preview | Production |
 | --- | --- | --- |
 | `DATABASE_URL` (pooled, `sslmode=verify-full`) | required | required |
-| `DIRECT_URL` (direct, owner role, migrations only) | required if `RUN_DB_MIGRATIONS=1` | required for manual migrations |
+| Direct URL, owner role, migrations only: `DIRECT_URL`, **or** `DATABASE_URL_UNPOOLED` when `DIRECT_URL` is not set (the Neon integration sets the latter) | required if `RUN_DB_MIGRATIONS=1` | required for manual migrations |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, `SESSION_SECRET` | required | required |
 | `RUN_DB_MIGRATIONS` | `1` (optional) | leave unset |
 | `ALLOW_PRODUCTION_MIGRATIONS` | leave unset | leave unset |
