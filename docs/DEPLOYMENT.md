@@ -119,6 +119,7 @@ These are every variable the code reads (checked by searching the source).
 | `ADMIN_PASSWORD_HASH` | **required** | **required** | Output of `npm run hash-password`. Not the plain password. |
 | `SESSION_SECRET` | **required** | **required** | 32+ characters. Different per environment. Changing it signs everyone out. |
 | `RUN_DB_MIGRATIONS` | `1` (optional, see section 5) | **leave unset** | Opt-in "migrate during build". |
+| `EXPECTED_DB_ENDPOINT` | **required if `RUN_DB_MIGRATIONS=1`** | leave unset | Endpoint id (Neon: `ep-...`) of the one database a build may migrate. The build refuses if the migration URL's host is a different endpoint, or a pooled host. Not a secret; never a connection string. |
 | `ALLOW_PRODUCTION_MIGRATIONS` | **leave unset** | **leave unset** | Only to override the build's refusal to migrate production. Do not set. |
 | `DATABASE_POOL_MAX` | optional | optional | Connections per function instance. Default 5. |
 
@@ -137,6 +138,7 @@ vercel env add ADMIN_USERNAME preview
 vercel env add ADMIN_PASSWORD_HASH preview --sensitive
 vercel env add SESSION_SECRET preview --sensitive
 vercel env add RUN_DB_MIGRATIONS preview            # value: 1
+vercel env add EXPECTED_DB_ENDPOINT preview         # value: the Preview branch's ep-... id (not a connection string)
 
 vercel env add DATABASE_URL production --sensitive
 # vercel env add DIRECT_URL production --sensitive   # only if your provider does not set DATABASE_URL_UNPOOLED for you

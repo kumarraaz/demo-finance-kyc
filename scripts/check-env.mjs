@@ -10,6 +10,7 @@
 
 import { resolveDirectUrl } from "./lib/direct-url.mjs";
 import { isMainModule } from "./lib/main-module.mjs";
+import { migrationTargetBlockers } from "./lib/migration-target.mjs";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
@@ -101,6 +102,13 @@ export function checkEnv(env, target = "local") {
   else if (new Set(env.SESSION_SECRET).size < 10) warnings.push("SESSION_SECRET has very low variety; generate it with openssl rand -base64 48");
   else ok.push("SESSION_SECRET is long enough");
 
+  // --- migration target proof (only relevant when the build will migrate) ---
+  if (willMigrate && resolved) {
+    const targetProblems = migrationTargetBlockers(env);
+    if (targetProblems.length === 0) ok.push("EXPECTED_DB_ENDPOINT matches the migration URL's endpoint");
+    for (const reason of targetProblems) errors.push(reason);
+  }
+
   // --- migration switches ---
   if (target === "production") {
     if (willMigrate) warnings.push("RUN_DB_MIGRATIONS=1 on production: the build will refuse unless ALLOW_PRODUCTION_MIGRATIONS=1, and migrating production should be a manual step");
@@ -129,6 +137,8 @@ export function migrationBlockers(env) {
   if (env.VERCEL_ENV === "production" && env.ALLOW_PRODUCTION_MIGRATIONS !== "1") {
     reasons.push("Refusing to migrate the production database during a build. Migrate production manually, or set ALLOW_PRODUCTION_MIGRATIONS=1 to override.");
   }
+  // The build must prove WHICH database it is about to change (EXPECTED_DB_ENDPOINT must match the URL's endpoint).
+  reasons.push(...migrationTargetBlockers(env));
   return reasons;
 }
 

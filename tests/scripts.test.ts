@@ -68,6 +68,7 @@ const good = {
   ADMIN_PASSWORD_HASH: goodHash,
   SESSION_SECRET: "Xk9".repeat(16) + "abcdefghijklmnop",
   RUN_DB_MIGRATIONS: "1",
+  EXPECTED_DB_ENDPOINT: "ep-x",
 };
 
 describe("environment checker", () => {
@@ -93,7 +94,7 @@ describe("environment checker", () => {
   it("requires TLS for remote databases but not for localhost", () => {
     expect(checkEnv({ ...good, DATABASE_URL: "postgresql://u:p@db.example.com/x" }, "preview").errors.join()).toMatch(/sslmode/);
     expect(checkEnv({ ...good, DATABASE_URL: "postgresql://u:p@db.example.com/x?sslmode=disable" }, "preview").errors.join()).toMatch(/sslmode/);
-    expect(checkEnv({ ...good, DATABASE_URL: "postgresql://u:p@localhost:5432/x", DIRECT_URL: "postgresql://u:p@localhost:5432/x" }, "local").errors).toEqual([]);
+    expect(checkEnv({ ...good, DATABASE_URL: "postgresql://u:p@localhost:5432/x", DIRECT_URL: "postgresql://u:p@localhost:5432/x", EXPECTED_DB_ENDPOINT: "localhost" }, "local").errors).toEqual([]);
   });
   it("warns about sslmode=require (pg v9 will weaken it) and pooled migration URLs", () => {
     const r = checkEnv({ ...good, DATABASE_URL: good.DATABASE_URL.replace("verify-full", "require"), DIRECT_URL: "postgresql://u:p@ep-x-pooler.example.com/db?sslmode=verify-full" }, "preview");
@@ -128,10 +129,10 @@ describe("migration guard used by the Vercel build", () => {
   it("requires DIRECT_URL and never falls back to the pooled DATABASE_URL", () => {
     expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL: "postgresql://pooled" }).join()).toMatch(/requires DIRECT_URL/);
     expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DIRECT_URL: "   " }).join()).toMatch(/requires DIRECT_URL/);
-    expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DIRECT_URL: "postgresql://direct" })).toEqual([]);
+    expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DIRECT_URL: "postgresql://direct", EXPECTED_DB_ENDPOINT: "direct" })).toEqual([]);
   });
   it("refuses to migrate production from a build unless explicitly overridden", () => {
-    const env = { RUN_DB_MIGRATIONS: "1", DIRECT_URL: "postgresql://direct", VERCEL_ENV: "production" };
+    const env = { RUN_DB_MIGRATIONS: "1", DIRECT_URL: "postgresql://direct", EXPECTED_DB_ENDPOINT: "direct", VERCEL_ENV: "production" };
     expect(migrationBlockers(env).join()).toMatch(/production database/);
     expect(migrationBlockers({ ...env, ALLOW_PRODUCTION_MIGRATIONS: "1" })).toEqual([]);
     expect(migrationBlockers({ ...env, VERCEL_ENV: "preview" })).toEqual([]);
@@ -210,9 +211,10 @@ describe("migration URL resolution: DIRECT_URL, then DATABASE_URL_UNPOOLED, then
       ADMIN_PASSWORD_HASH: goodHash,
       SESSION_SECRET: "Xk9".repeat(16) + "abcdefghijklmnop",
       RUN_DB_MIGRATIONS: "1",
+      EXPECTED_DB_ENDPOINT: "ep-x",
     };
     it("migrationBlockers allows migrations with only DATABASE_URL_UNPOOLED", () => {
-      expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL_UNPOOLED: B })).toEqual([]);
+      expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL_UNPOOLED: B, EXPECTED_DB_ENDPOINT: "unpooled" })).toEqual([]);
     });
     it("migrationBlockers still blocks with only the pooled DATABASE_URL, or a blank UNPOOLED", () => {
       expect(migrationBlockers({ RUN_DB_MIGRATIONS: "1", DATABASE_URL: C }).join()).toMatch(/requires DIRECT_URL \(or DATABASE_URL_UNPOOLED\)/);
@@ -229,7 +231,7 @@ describe("migration URL resolution: DIRECT_URL, then DATABASE_URL_UNPOOLED, then
       expect(r.ok.join("\n")).toMatch(/DATABASE_URL_UNPOOLED is used as the direct URL because DIRECT_URL is not set/);
     });
     it("checkEnv: DIRECT_URL is reported as taking priority when both are set", () => {
-      const r = checkEnv({ ...neon, DIRECT_URL: "postgresql://u:p@ep-y.example.com/db?sslmode=verify-full" }, "preview");
+      const r = checkEnv({ ...neon, DIRECT_URL: "postgresql://u:p@ep-x.example.com/other?sslmode=verify-full" }, "preview");
       expect(r.errors).toEqual([]);
       expect(r.ok.join("\n")).toMatch(/DIRECT_URL takes priority over DATABASE_URL_UNPOOLED/);
       expect(r.ok.join("\n")).not.toMatch(/used as the direct URL/);

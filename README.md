@@ -125,6 +125,8 @@ Migrations are plain SQL files in `prisma/migrations/`, applied in order by `pri
 
 **Which URL do migrations use?** First non-blank of `DIRECT_URL`, then `DATABASE_URL_UNPOOLED`. `DIRECT_URL` always wins when both are set. With neither, local commands fall back to `DATABASE_URL`, but a build with `RUN_DB_MIGRATIONS=1` refuses to run (it never migrates through the pooled URL). One shared module (`scripts/lib/direct-url.mjs`) decides this for the Prisma CLI and the build guards, so they cannot disagree.
 
+**Migration target guard.** `RUN_DB_MIGRATIONS=1` also requires `EXPECTED_DB_ENDPOINT`: the endpoint id (Neon: the `ep-...` start of the host name, the first part of the host name in the branch's connection details) of the one database a build may migrate. The build compares it with the host of the URL migrations really use (`DIRECT_URL`, else `DATABASE_URL_UNPOOLED`) and refuses on a mismatch, on a missing value, or when the migration host is a `-pooler` host. It is an id, not a secret, and the messages never print a URL, user or password (`scripts/lib/migration-target.mjs`).
+
 **Check which database a variable points to before turning migrations on.** The Neon integration writes `DATABASE_URL_UNPOOLED` for every environment it is connected to. If the *Production* Neon resource is ever connected to the *Preview* environment, a Preview build with `RUN_DB_MIGRATIONS=1` would migrate the **Production** database. Keep Preview on its own Neon database or branch (see `docs/DEPLOYMENT.md`).
 
 By default (no flag), a build never touches any database. All previews share one Preview database unless you give each branch its own; a destructive migration in one branch can break another branch's preview.

@@ -1,7 +1,8 @@
 // Build entry point for Vercel (package.json "vercel-build").
 //
 // Migrations are OPT-IN so that a build can never change a database by accident:
-//   RUN_DB_MIGRATIONS=1               -> run `prisma migrate deploy` before building (requires DIRECT_URL or DATABASE_URL_UNPOOLED)
+//   RUN_DB_MIGRATIONS=1               -> run `prisma migrate deploy` before building (requires DIRECT_URL or DATABASE_URL_UNPOOLED,
+//                                        AND EXPECTED_DB_ENDPOINT naming the one database allowed to be migrated)
 //   VERCEL_ENV=production additionally requires ALLOW_PRODUCTION_MIGRATIONS=1
 //
 // Recommended: set RUN_DB_MIGRATIONS=1 on the Preview environment only, with a
@@ -10,6 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { checkEnv, formatReport, migrationBlockers } from "./check-env.mjs";
 import { resolveDirectUrl } from "./lib/direct-url.mjs";
+import { describeDbHost } from "./lib/migration-target.mjs";
 
 function run(args) {
   const result = spawnSync("npx", args, { stdio: "inherit" });
@@ -32,7 +34,12 @@ if (process.env.RUN_DB_MIGRATIONS === "1") {
     process.exit(1);
   }
   // Say WHICH variable is used (never its value), so a build log shows the migration target's source.
-  console.log(`Applying database migrations (VERCEL_ENV=${process.env.VERCEL_ENV ?? "local"}) using ${resolveDirectUrl(process.env)?.name}...`);
+  // The target endpoint id (host-derived, not a credential) is logged as evidence of what was verified.
+  const direct = resolveDirectUrl(process.env);
+  console.log(
+    `Migration target verified: ${direct?.name} -> endpoint ${describeDbHost(direct?.value ?? "")?.endpointId} (matches EXPECTED_DB_ENDPOINT).`,
+  );
+  console.log(`Applying database migrations (VERCEL_ENV=${process.env.VERCEL_ENV ?? "local"}) using ${direct?.name}...`);
   run(["prisma", "migrate", "deploy"]);
 } else {
   console.log("Skipping database migrations (RUN_DB_MIGRATIONS is not 1).");
