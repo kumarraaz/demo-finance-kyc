@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { migrationBlockers, checkEnv, formatReport } from "../scripts/check-env.mjs";
 import { describeDbHost, migrationTargetBlockers, targetVerificationBlockers } from "../scripts/lib/migration-target.mjs";
 
-// The Preview branch's endpoint, and the Production endpoint (the one that must never be migrated
-// by a Preview build). These are ids, not credentials.
-const PREVIEW = "ep-empty-rice-b5y6zqdt";
-const PRODUCTION = "ep-mute-scene-b5d6aqrh";
+// Fixture endpoint ids with the same shape as Neon's ("ep-..."). The guard is endpoint-agnostic: it only
+// compares the id in the URL with the configured one, so real ids add nothing and are not used here.
+const PREVIEW = "ep-preview-fixture-000001";
+const PRODUCTION = "ep-production-fixture-000002";
 const url = (endpoint: string, { pooled = false, user = "neondb_owner", pw = "s3cretPW" } = {}) =>
   `postgresql://${user}:${pw}@${endpoint}${pooled ? "-pooler" : ""}.c-7.us-east-2.aws.neon.tech/neondb?sslmode=verify-full`;
 
@@ -51,7 +51,7 @@ describe("migration-target guard (RUN_DB_MIGRATIONS=1 must prove which database 
 
   it("checks the URL migrations actually use: DIRECT_URL wins over DATABASE_URL_UNPOOLED", () => {
     const env = { ...base, DIRECT_URL: url(PRODUCTION), DATABASE_URL_UNPOOLED: url(PREVIEW), EXPECTED_DB_ENDPOINT: PREVIEW };
-    expect(migrationBlockers(env).join()).toMatch(/DIRECT_URL points at endpoint "ep-mute-scene-b5d6aqrh"/);
+    expect(migrationBlockers(env).join()).toMatch(new RegExp(`DIRECT_URL points at endpoint "${PRODUCTION}"`));
   });
 
   it("is not fooled by the pooled DATABASE_URL pointing at Preview while the direct URL points elsewhere", () => {
@@ -88,7 +88,7 @@ describe("migration-target guard (RUN_DB_MIGRATIONS=1 must prove which database 
   });
 
   it("never echoes a connection string or password, even if one is pasted into EXPECTED_DB_ENDPOINT", () => {
-    const pasted = "postgresql://neondb_owner:hunter2-pw@ep-empty-rice-b5y6zqdt.c-7.us-east-2.aws.neon.tech/neondb";
+    const pasted = `postgresql://neondb_owner:hunter2-pw@${PREVIEW}.c-7.us-east-2.aws.neon.tech/neondb`;
     const env = { ...base, DATABASE_URL_UNPOOLED: url(PREVIEW, { pw: "hunter2-pw" }), EXPECTED_DB_ENDPOINT: pasted };
     const out = migrationBlockers(env).join("\n");
     expect(out).toMatch(/not a plain endpoint id/);
@@ -114,7 +114,7 @@ describe("verify-only mode (EXPECTED_DB_ENDPOINT set, migrations off)", () => {
   it("fails when the app's pooled DATABASE_URL points at a different endpoint than the direct URL", () => {
     const env = { DATABASE_URL: url(PRODUCTION, { pooled: true }), DATABASE_URL_UNPOOLED: url(PREVIEW), EXPECTED_DB_ENDPOINT: PREVIEW };
     const out = targetVerificationBlockers(env).join();
-    expect(out).toMatch(/DATABASE_URL points at endpoint "ep-mute-scene-b5d6aqrh"/);
+    expect(out).toMatch(new RegExp(`DATABASE_URL points at endpoint "${PRODUCTION}"`));
   });
   it("fails when there is no direct URL to verify", () => {
     expect(targetVerificationBlockers({ DATABASE_URL: url(PREVIEW, { pooled: true }), EXPECTED_DB_ENDPOINT: PREVIEW }).join()).toMatch(/no direct URL/);

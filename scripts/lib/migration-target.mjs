@@ -77,6 +77,17 @@ export function migrationTargetBlockers(env) {
 }
 
 /**
+ * The target problems the BUILD will enforce for this environment: the migrating check when
+ * RUN_DB_MIGRATIONS=1, otherwise the verify-only check. scripts/check-env.mjs reports exactly this,
+ * so `npm run check-env` and `vercel-build` cannot disagree.
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]}
+ */
+export function buildTargetBlockers(env) {
+  return env.RUN_DB_MIGRATIONS === "1" ? migrationTargetBlockers(env) : targetVerificationBlockers(env);
+}
+
+/**
  * Verification without migrating: when EXPECTED_DB_ENDPOINT is set, a build must prove the URLs point
  * at it even if RUN_DB_MIGRATIONS is off. A READY deployment then means "the target matches".
  * Returns [] when EXPECTED_DB_ENDPOINT is not set (nothing to verify).

@@ -10,7 +10,7 @@
 
 import { resolveDirectUrl } from "./lib/direct-url.mjs";
 import { isMainModule } from "./lib/main-module.mjs";
-import { migrationTargetBlockers } from "./lib/migration-target.mjs";
+import { buildTargetBlockers, migrationTargetBlockers } from "./lib/migration-target.mjs";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
@@ -102,10 +102,13 @@ export function checkEnv(env, target = "local") {
   else if (new Set(env.SESSION_SECRET).size < 10) warnings.push("SESSION_SECRET has very low variety; generate it with openssl rand -base64 48");
   else ok.push("SESSION_SECRET is long enough");
 
-  // --- migration target proof (only relevant when the build will migrate) ---
-  if (willMigrate && resolved) {
-    const targetProblems = migrationTargetBlockers(env);
-    if (targetProblems.length === 0) ok.push("EXPECTED_DB_ENDPOINT matches the migration URL's endpoint");
+  // --- database target proof: exactly what the build enforces ---
+  // Migrating (RUN_DB_MIGRATIONS=1): EXPECTED_DB_ENDPOINT is required and must match.
+  // Not migrating: if EXPECTED_DB_ENDPOINT is set, the build still verifies it and fails on a mismatch.
+  // (When migrating without any direct URL, the error above already says so.)
+  if ((willMigrate && resolved) || (!willMigrate && isSet("EXPECTED_DB_ENDPOINT"))) {
+    const targetProblems = buildTargetBlockers(env);
+    if (targetProblems.length === 0) ok.push("EXPECTED_DB_ENDPOINT matches the database URLs' endpoint");
     for (const reason of targetProblems) errors.push(reason);
   }
 

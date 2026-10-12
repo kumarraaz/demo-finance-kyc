@@ -58,4 +58,5 @@ add SESSION_SECRET "$secret" --sensitive
 add ADMIN_PASSWORD_HASH "$hash" --sensitive
 add ADMIN_USERNAME "$username" --no-sensitive
 
-echo "Done. Nothing secret was printed. Tell Claude it is finished; Claude can check the variables EXIST (never their values)."
+echo "Done. Nothing secret was printed. To confirm the variables exist (values stay hidden), run:"
+echo "  $vercel_bin env ls preview $branch --project $project --scope $scope"

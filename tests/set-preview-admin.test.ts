@@ -61,3 +61,16 @@ describe("scripts/set-preview-admin.sh", () => {
     expect(r.stderr).toMatch(/username/);
   });
 });
+
+describe("scripts/set-preview-admin.sh output is neutral and useful for any operator", () => {
+  it("does not mention an assistant, and tells the operator how to confirm the variables exist", () => {
+    expect(text).not.toMatch(/\bClaude\b/i);
+    expect(text).toMatch(/env ls preview "?\$branch"?|env ls preview \$branch/);
+    expect(text).toMatch(/values stay hidden/);
+  });
+
+  it("the suggested command is read-only (ls) and never prints a secret variable", () => {
+    const done = text.slice(text.indexOf('echo "Done.'));
+    expect(done).not.toMatch(/\$secret|\$hash|env pull|--decrypt/);
+  });
+});
