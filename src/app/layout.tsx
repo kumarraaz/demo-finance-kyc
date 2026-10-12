@@ -15,8 +15,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body>
+        <a className="skip-link" href="#main">Skip to main content</a>
         <DemoBanner />
-        <main className="container">{children}</main>
+        {children}
       </body>
     </html>
   );

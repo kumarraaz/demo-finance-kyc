@@ -33,7 +33,9 @@ There is deliberately no "approved" or "rejected" status. `simulated_check_*` ou
 | --- | --- | --- |
 | `/` | public | Landing page |
 | `/admin/login` | public | Sign in |
-| `/admin`, `/admin/applications/new`, `/admin/applications/[id]` | admin | Dashboard, create, detail + status + history |
+| `/admin` | admin | Overview: status counts, distribution, recent applications, workflow outline |
+| `/admin/applications` | admin | Searchable, filterable, paged application list (`?q=`, `?status=`, `?page=`) |
+| `/admin/applications/new`, `/admin/applications/[id]` | admin | Create; detail + status update + history timeline |
 | `GET /api/health` | public | `{status, database, schema}` only. 503 if the database is unreachable or migrations are missing |
 | `POST /api/admin/login` | public | Sign in (rate limited) |
 | `POST /api/admin/logout` | cookie | Revokes the session server-side |

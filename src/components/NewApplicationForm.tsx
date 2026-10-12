@@ -3,7 +3,21 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { LOAN_PRODUCTS } from "@/lib/validation";
+import { formatProduct } from "@/lib/format";
+import { Alert } from "./Alert";
+import { Icon } from "./Icon";
 
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="field-error" role="alert">
+      <Icon name="alert" size={16} />
+      {message}
+    </p>
+  );
+}
+
+// API contract unchanged: POST /api/admin/applications; 201 -> open the new record.
 export function NewApplicationForm() {
   const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -31,9 +45,8 @@ export function NewApplicationForm() {
       });
     } catch {
       setMessage("Network error. Try again.");
-      return;
-    } finally {
       setBusy(false);
+      return;
     }
     const data = await res.json().catch(() => null);
     if (res.status === 201) {
@@ -41,47 +54,57 @@ export function NewApplicationForm() {
       router.refresh();
       return;
     }
+    setBusy(false);
     setErrors(data?.error?.fields ?? {});
     setMessage(data?.error?.message ?? "Could not save");
   }
 
+  const bad = (k: string) => (errors[k] ? true : undefined);
+  const desc = (k: string) => (errors[k] ? `err-${k}` : undefined);
+
   return (
-    <form onSubmit={onSubmit} className="card form" noValidate>
-      <p className="notice">
-        Use <strong>fictional</strong> data only. Do not enter a PAN, Aadhaar number or any real identity data. These
-        are rejected.
-      </p>
-      <label>
-        Applicant name (fictional)
-        <input name="applicantName" required maxLength={100} />
-        {errors.applicantName && <span className="error">{errors.applicantName}</span>}
-      </label>
-      <label>
-        Email (fictional)
-        <input name="email" type="email" required maxLength={254} />
-        {errors.email && <span className="error">{errors.email}</span>}
-      </label>
-      <label>
-        Loan product (demo)
-        <select name="loanProduct" defaultValue="personal">
+    <form onSubmit={onSubmit} className="form" noValidate>
+      <Alert tone="warning" title="Fictional data only">
+        Do not enter a PAN, Aadhaar number or any real identity data. These are rejected.
+      </Alert>
+      {message && <Alert tone="error">{message}</Alert>}
+
+      <div className="field">
+        <label htmlFor="applicantName">Applicant name (fictional) <span className="tag-required">Required</span></label>
+        <input id="applicantName" name="applicantName" className="input" required maxLength={100} autoComplete="off" aria-invalid={bad("applicantName")} aria-describedby={desc("applicantName")} />
+        <FieldError id="err-applicantName" message={errors.applicantName} />
+      </div>
+      <div className="field">
+        <label htmlFor="email">Email (fictional) <span className="tag-required">Required</span></label>
+        <input id="email" name="email" type="email" className="input" required maxLength={254} autoComplete="off" aria-invalid={bad("email")} aria-describedby={desc("email")} />
+        <FieldError id="err-email" message={errors.email} />
+      </div>
+      <div className="field">
+        <label htmlFor="loanProduct">Loan product (demo)</label>
+        <select id="loanProduct" name="loanProduct" className="select" defaultValue="personal" aria-invalid={bad("loanProduct")} aria-describedby={desc("loanProduct")}>
           {LOAN_PRODUCTS.map((p) => (
-            <option key={p} value={p}>{p}</option>
+            <option key={p} value={p}>{formatProduct(p)}</option>
           ))}
         </select>
-        {errors.loanProduct && <span className="error">{errors.loanProduct}</span>}
-      </label>
-      <label>
-        Requested amount (demo, INR)
-        <input name="requestedAmount" type="number" min={1000} max={10000000} step={1} required />
-        {errors.requestedAmount && <span className="error">{errors.requestedAmount}</span>}
-      </label>
-      <label>
-        Purpose (optional)
-        <input name="purpose" maxLength={200} />
-        {errors.purpose && <span className="error">{errors.purpose}</span>}
-      </label>
-      {message && <p className="error" role="alert">{message}</p>}
-      <button type="submit" disabled={busy}>{busy ? "Saving..." : "Create demo application"}</button>
+        <FieldError id="err-loanProduct" message={errors.loanProduct} />
+      </div>
+      <div className="field">
+        <label htmlFor="requestedAmount">Requested amount (demo, INR) <span className="tag-required">Required</span></label>
+        <input id="requestedAmount" name="requestedAmount" type="number" inputMode="numeric" className="input" min={1000} max={10000000} step={1} required aria-invalid={bad("requestedAmount")} aria-describedby={`hint-amount${errors.requestedAmount ? " err-requestedAmount" : ""}`} />
+        <p id="hint-amount" className="hint">Whole rupees, between 1,000 and 1,00,00,000.</p>
+        <FieldError id="err-requestedAmount" message={errors.requestedAmount} />
+      </div>
+      <div className="field">
+        <label htmlFor="purpose">Purpose <span className="tag-optional">Optional</span></label>
+        <input id="purpose" name="purpose" className="input" maxLength={200} aria-invalid={bad("purpose")} aria-describedby={desc("purpose")} />
+        <FieldError id="err-purpose" message={errors.purpose} />
+      </div>
+      <div className="page-actions">
+        <button type="submit" className="btn btn-primary" disabled={busy} aria-busy={busy}>
+          {busy && <span className="spinner" aria-hidden="true" />}
+          {busy ? "Saving..." : "Create demo application"}
+        </button>
+      </div>
     </form>
   );
 }
