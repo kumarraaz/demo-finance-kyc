@@ -1,7 +1,11 @@
 # Deployment guide: Vercel + hosted PostgreSQL
 
-> **Status: nothing in this guide has been run against a real Vercel project or hosted database.**
-> When this was written, no Vercel project, no hosted database and no GitHub Actions run existed for this repository. The app is **not** deployment-ready until every item in [Verification](#7-verification-checklist) has passed on a real Preview deployment. Do not use real customer data. The app is a simulated prototype.
+> **Status: the steps in this guide have not been completed against a real Vercel project or hosted database.**
+> The app is **not** deployment-ready until every item in [Verification](#7-verification-checklist) has passed on a real Preview deployment. Do not use real customer data. The app is a simulated prototype.
+
+### What happened to the first Vercel deployment (root cause)
+
+A Vercel project named `demo-finance-kyc` was created on 2026-10-11 from this repository. Vercel's Production Branch is `main`, and `main` held only a one-line `README.md` (commit `7dc542d`): no `package.json`, no Next.js. Vercel's first Production build of `main` therefore failed (GitHub shows the commit status as `Vercel: failure`). The application lives on the working branch `ccr-1653a651-wm7pqg`, which Vercel had never built, because that branch was pushed before the project existed. The fix is to get the verified application onto `main` through a pull request. Merging to `main` **starts a Production build automatically**, so merge only after a Preview of the same code has been verified (section 7) or you accept an unconfigured Production deployment (login stays disabled until the variables exist, and `/api/health` reports degraded).
 
 Everything below that was checked locally is marked **(tested locally)**. Anything that depends on your provider's current dashboard or CLI is marked **(verify)**.
 
@@ -98,6 +102,8 @@ openssl rand -base64 48                                                 # this i
 ```
 
 Use **different** `ADMIN_PASSWORD_HASH` and `SESSION_SECRET` values for Preview and Production. Copy each result straight into Vercel. Do not save them in a file in the repo.
+
+**About `$` in the hash.** The hash is `scrypt$<salt>$<hash>`. Next.js's `.env.local` loader expands `$name` and truncates it to `scrypt` unless every `$` is written as `\$` (tested; this only applies to `.env.local`). Whether Vercel stores a pasted value literally is **not verified**. The app now treats a malformed hash as "admin login not configured" (login route returns 503, one value-free line in the runtime logs), and the Vercel build log prints `ok  ADMIN_PASSWORD_HASH has the expected format` or an `ERROR`. Check that line after you set the variable.
 
 ### 4c. Exact variables
 

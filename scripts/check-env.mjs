@@ -81,6 +81,9 @@ export function checkEnv(env, target = "local") {
   if (!isSet("ADMIN_PASSWORD_HASH")) errors.push("ADMIN_PASSWORD_HASH is not set");
   else if (!/^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/.test(env.ADMIN_PASSWORD_HASH)) {
     errors.push("ADMIN_PASSWORD_HASH is not in the expected scrypt$<salt>$<hash> format (generate it with npm run hash-password)");
+    if (env.ADMIN_PASSWORD_HASH.length < 20 && env.ADMIN_PASSWORD_HASH.startsWith("scrypt")) {
+      errors.push("ADMIN_PASSWORD_HASH looks truncated: a '$' was probably expanded as a variable. In .env.local write each '$' as '\\$'");
+    }
   } else ok.push("ADMIN_PASSWORD_HASH has the expected format");
 
   if (!isSet("SESSION_SECRET")) errors.push("SESSION_SECRET is not set");

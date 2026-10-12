@@ -83,11 +83,20 @@ Put the URL in `.env.local` as `DATABASE_URL` (and `DIRECT_URL` if you like). Bo
 
 ```bash
 npm run db:migrate:deploy                                # apply migrations
-npm run hash-password -- 'a-long-password-you-choose'    # paste output into ADMIN_PASSWORD_HASH
+npm run hash-password -- 'a-long-password-you-choose'    # paste output into ADMIN_PASSWORD_HASH (see the $ warning below)
 openssl rand -base64 48                                  # paste into SESSION_SECRET
-npm run check-env                                        # optional: are the variables present and well-formed? (never prints values)
 npm run dev
 ```
+
+**Warning: `$` in `.env.local`.** The password hash is `scrypt$<salt>$<hash>`. Next.js expands `$name` in `.env` files, and in every quoting style (unquoted, `"..."`, `'...'`) that silently truncates the hash to `scrypt`. Write each `$` as `\$` in `.env.local` only:
+
+```
+ADMIN_PASSWORD_HASH=scrypt\$<salt>\$<hash>
+```
+
+If the hash is malformed the app treats admin login as **not configured** (HTTP 503 from the login route, and one `ADMIN_PASSWORD_HASH has an invalid format` line in the logs; the value is never logged). Checked with Next.js's real env loader; whether Vercel's own environment-variable storage expands `$` is **not verified**: after setting it there, look for `ok  ADMIN_PASSWORD_HASH has the expected format` in the build log.
+
+`npm run check-env -- local` validates the variables in the **process environment** (what Vercel provides at build time; it also runs automatically in the Vercel build log). It does **not** read `.env.local`. It never prints values.
 
 Never commit `.env.local` or any real secret. `.gitignore` excludes `.env*` (except `.env.example`).
 

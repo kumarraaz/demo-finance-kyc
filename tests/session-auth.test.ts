@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { clientIp, getAuthConfig, hashForKey, hashPassword, verifyPassword } from "@/lib/auth";
+import { describe, expect, it, vi } from "vitest";
+import { PASSWORD_HASH_PATTERN, clientIp, getAuthConfig, hashForKey, hashPassword, verifyPassword } from "@/lib/auth";
 import { createSessionToken, verifySessionToken } from "@/lib/session";
 
 const SECRET = "x".repeat(40);
@@ -50,15 +50,36 @@ describe("passwords", () => {
   });
 });
 
+const GOOD_HASH = `scrypt$${"a".repeat(32)}$${"b".repeat(128)}`;
+
 describe("auth config", () => {
   it("is null unless everything is set and the secret is long enough", () => {
     expect(getAuthConfig({} as NodeJS.ProcessEnv)).toBeNull();
-    expect(getAuthConfig({ ADMIN_USERNAME: "a", ADMIN_PASSWORD_HASH: "h", SESSION_SECRET: "short" } as never)).toBeNull();
-    expect(getAuthConfig({ ADMIN_USERNAME: "a", ADMIN_PASSWORD_HASH: "h", SESSION_SECRET: SECRET } as never)).toEqual({
+    expect(getAuthConfig({ ADMIN_USERNAME: "a", ADMIN_PASSWORD_HASH: GOOD_HASH, SESSION_SECRET: "short" } as never)).toBeNull();
+    expect(getAuthConfig({ ADMIN_USERNAME: "a", ADMIN_PASSWORD_HASH: GOOD_HASH, SESSION_SECRET: SECRET } as never)).toEqual({
       username: "a",
-      passwordHash: "h",
+      passwordHash: GOOD_HASH,
       secret: SECRET,
     });
+  });
+  it("treats a malformed hash as 'not configured' (fail closed) and never logs its value", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const bad of ["scrypt", "h", "plaintext-password", GOOD_HASH.toUpperCase(), GOOD_HASH + "x", `md5$${"a".repeat(32)}$${"b".repeat(128)}`]) {
+        expect(getAuthConfig({ ADMIN_USERNAME: "a", ADMIN_PASSWORD_HASH: bad, SESSION_SECRET: SECRET } as never)).toBeNull();
+      }
+      const logged = spy.mock.calls.flat().join(" ");
+      expect(logged).toMatch(/invalid format/);
+      expect(logged).not.toContain("plaintext-password");
+      expect(logged).not.toContain("bbbbbbbb");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("accepts exactly what hashPassword produces", async () => {
+    const hash = await hashPassword("a-test-password-123");
+    expect(PASSWORD_HASH_PATTERN.test(hash)).toBe(true);
+    expect(getAuthConfig({ ADMIN_USERNAME: "a", ADMIN_PASSWORD_HASH: hash, SESSION_SECRET: SECRET } as never)?.passwordHash).toBe(hash);
   });
 });
 

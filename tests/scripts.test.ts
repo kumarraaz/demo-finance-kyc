@@ -78,6 +78,10 @@ describe("environment checker", () => {
     const r = checkEnv({}, "preview");
     expect(r.errors.join("\n")).toMatch(/DATABASE_URL[\s\S]*ADMIN_USERNAME[\s\S]*ADMIN_PASSWORD_HASH[\s\S]*SESSION_SECRET/);
   });
+  it("explains a hash that was truncated by '$' expansion in an .env loader", () => {
+    const r = checkEnv({ ...good, ADMIN_PASSWORD_HASH: "scrypt" }, "preview");
+    expect(r.errors.join("\n")).toMatch(/truncated[\s\S]*\$/);
+  });
   it("rejects a malformed password hash, a short secret and a non-postgres URL", () => {
     const r = checkEnv({ ...good, ADMIN_PASSWORD_HASH: "plaintext-password", SESSION_SECRET: "short", DATABASE_URL: "mysql://u:p@h/db" }, "preview");
     expect(r.errors.join("\n")).toMatch(/scrypt/);

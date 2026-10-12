@@ -3,13 +3,31 @@ import { MIN_SECRET_LENGTH } from "./session";
 
 export type AuthConfig = { username: string; passwordHash: string; secret: string };
 
+// The only accepted format: scrypt$<16-byte salt, 32 hex chars>$<64-byte hash, 128 hex chars>.
+export const PASSWORD_HASH_PATTERN = /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/;
+
+let warnedBadHash = false;
+
 // Returns null when the admin area has not been configured. There are no
 // default credentials: an unconfigured deployment simply cannot log in.
+// A malformed ADMIN_PASSWORD_HASH counts as "not configured" (fail closed, and
+// say so clearly) instead of surfacing later as a baffling "invalid password".
 export function getAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig | null {
   const username = env.ADMIN_USERNAME;
   const passwordHash = env.ADMIN_PASSWORD_HASH;
   const secret = env.SESSION_SECRET;
   if (!username || !passwordHash || !secret || secret.length < MIN_SECRET_LENGTH) return null;
+  if (!PASSWORD_HASH_PATTERN.test(passwordHash)) {
+    if (!warnedBadHash) {
+      warnedBadHash = true;
+      // Never log the value itself, only its length and shape.
+      console.error(
+        `ADMIN_PASSWORD_HASH has an invalid format (length ${passwordHash.length}); admin login is disabled. ` +
+          "If the value is just 'scrypt', a '$' was expanded by an .env loader: escape each '$' as '\\$' in .env.local.",
+      );
+    }
+    return null;
+  }
   return { username, passwordHash, secret };
 }
 
