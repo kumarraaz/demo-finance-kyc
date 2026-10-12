@@ -2,6 +2,7 @@
 // Used in CI so that PostgreSQL-backed tests can never be silently skipped.
 // Usage: node scripts/assert-no-skips.mjs vitest-results.json
 import fs from "node:fs";
+import { isMainModule } from "./lib/main-module.mjs";
 
 /** @param {{numTotalTests?: number, numPendingTests?: number, numTodoTests?: number, numFailedTests?: number}} report */
 export function evaluateReport(report) {
@@ -13,7 +14,7 @@ export function evaluateReport(report) {
   return problems;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   const file = process.argv[2];
   if (!file) {
     console.error("usage: node scripts/assert-no-skips.mjs <vitest-json-report>");

@@ -15,6 +15,7 @@
 import { createInterface } from "node:readline/promises";
 import { randomBytes } from "node:crypto";
 import { stdin, stderr } from "node:process";
+import { isMainModule } from "./lib/main-module.mjs";
 import { readSecret } from "./lib/prompt.mjs";
 
 /** Validate the attributes of the session cookie the server sets on login. Pure, unit-tested. */
@@ -168,7 +169,7 @@ async function main() {
   process.exit(failures === 0 ? 0 : 1);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main().catch((e) => {
     stderr.write(`Smoke test could not run: ${e instanceof Error ? e.message : String(e)}\n`);
     process.exit(1);

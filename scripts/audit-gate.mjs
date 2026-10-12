@@ -5,6 +5,7 @@
 // Accepted entries are documented in docs/dependency-audit.md. Remove an entry as
 // soon as a fixed version exists.
 import { spawnSync } from "node:child_process";
+import { isMainModule } from "./lib/main-module.mjs";
 
 /** package -> advisories accepted for that package (empty array = transitive only). */
 export const ACCEPTED = {
@@ -69,7 +70,7 @@ function runAudit(args) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   let full, prod;
   try {
     full = runAudit([]);

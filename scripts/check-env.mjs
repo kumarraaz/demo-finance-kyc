@@ -9,6 +9,7 @@
 // Exit code 1 if there are errors (or warnings with --strict).
 
 import { resolveDirectUrl } from "./lib/direct-url.mjs";
+import { isMainModule } from "./lib/main-module.mjs";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
@@ -139,7 +140,7 @@ export function formatReport({ errors, warnings, ok }) {
   return lines.join("\n");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2);
   const target = args.find((a) => !a.startsWith("--")) ?? "local";
   if (!["local", "preview", "production"].includes(target)) {
