@@ -252,3 +252,10 @@ Known limits: the actions are referenced by tag (`actions/checkout@v4`, `actions
 ### Setting the admin variables for a Preview branch from your terminal
 
 `bash scripts/set-preview-admin.sh <git-branch> [admin-username]` sets `SESSION_SECRET` (generated locally, never shown), `ADMIN_PASSWORD_HASH` (you type the password, hidden, asked twice; only its scrypt hash is stored) and `ADMIN_USERNAME` for **one Preview branch**. Values go to the Vercel CLI through a pipe, never through arguments, shell history or output. It never overwrites an existing variable and refuses `main`, `master` and `production`. It needs an interactive terminal, `node`, `openssl` and the Vercel CLI logged in (`vercel login`). Notes from the CLI source (v63): `vercel env add` reads piped stdin (only its first chunk, and only if data arrives within 500 ms, so the value must be ready before the pipe starts, as in the script), strips one trailing newline, and accepts `--sensitive` together with a Git branch.
+
+### Setting the admin variables for Production from your terminal
+
+`bash scripts/set-production-admin.sh [admin-username]` is the Production counterpart of the Preview script. It requires you to type `production`, refuses to do anything if `SESSION_SECRET`, `ADMIN_PASSWORD_HASH` or `ADMIN_USERNAME` already exists for Production (it never overwrites), generates a fresh Production `SESSION_SECRET` (never shared with Preview), asks for the password twice with hidden input and stores only its scrypt hash. Values go to the Vercel CLI through a pipe, never through arguments or output. A new Production deployment is needed afterwards.
+
+Production database migration (one-off, guarded): set `EXPECTED_DB_ENDPOINT` to the Production branch's endpoint id and deploy once (a READY build proves the URLs point there); then set `RUN_DB_MIGRATIONS=1` and `ALLOW_PRODUCTION_MIGRATIONS=1` for that one Production deployment, verify the tables and the `_prisma_migrations` row in the database, and set both flags back to `0` immediately. Keep `EXPECTED_DB_ENDPOINT` so every later build still verifies its target.
+

@@ -157,6 +157,13 @@ async function main() {
   const loginPage = await req("/admin/login");
   const headerProblems = checkPageHeaders((h) => loginPage.headers.get(h), { https });
   record("security headers on the login page", loginPage.status === 200 && headerProblems.length === 0, headerProblems.join("; ") || `HTTP ${loginPage.status}`);
+  // UI: the redesigned sign-in screen (read-only; no login attempt is made here).
+  const loginHtml = await loginPage.text();
+  record("login page renders the sign-in form", /Welcome back/.test(loginHtml) && /id="username"/.test(loginHtml) && /id="password"/.test(loginHtml) && /Sign in/.test(loginHtml));
+  record("login page keeps the simulated-demo banner", /SIMULATED DEMO/.test(loginHtml));
+  // Old bookmarks to the list that used to live at /admin must still reach it.
+  const legacy = await req("/admin?status=closed");
+  record("legacy /admin?status=... redirects to the applications list", legacy.status === 307 && (legacy.headers.get("location") ?? "").includes("/admin/applications"), `HTTP ${legacy.status}`);
 
   // 5. cross-origin write refused
   const evil = await post("/api/admin/login", { username: "x", password: "x" }, undefined, "https://evil.example");
@@ -185,6 +192,12 @@ async function main() {
     record("authenticated admin API returns 200", apps.status === 200, `HTTP ${apps.status}`);
     const page = await req("/admin", { headers: { Cookie: cookie } });
     record("authenticated /admin renders", page.status === 200, `HTTP ${page.status}`);
+    const overviewHtml = await page.text();
+    record("overview shows the status cards and labels unconnected workflow stages", /Total applications/.test(overviewHtml) && /Not connected/.test(overviewHtml));
+    for (const path of ["/admin/applications", "/admin/applications/new"]) {
+      const r = await req(path, { headers: { Cookie: cookie } });
+      record(`authenticated ${path} renders`, r.status === 200, `HTTP ${r.status}`);
+    }
 
     // 9. optional write path
     if (write) {

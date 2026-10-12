@@ -1,16 +1,24 @@
 import Link from "next/link";
+import { BrandMark } from "@/components/BrandMark";
+import { Icon } from "@/components/Icon";
 
 export default function Home() {
   return (
-    <>
-      <h1>Demo Finance KYC</h1>
-      <p>
-        This is a prototype. Every verification step is <strong>simulated</strong>. It does not perform real KYC,
-        does not accept PAN or Aadhaar data, and never approves or offers a loan.
-      </p>
-      <p>
-        <Link href="/admin">Admin dashboard</Link> (login required)
-      </p>
-    </>
+    <main id="main" className="home" tabIndex={-1}>
+      <div className="card home-card">
+        <BrandMark />
+        <h1>Merchant finance workspace (demo)</h1>
+        <p className="muted">
+          This is a prototype. Every verification step is <strong>simulated</strong>. It does not perform real KYC,
+          does not accept PAN or Aadhaar data, and never approves or offers a loan.
+        </p>
+        <div className="home-actions">
+          <Link href="/admin" className="btn btn-primary">
+            Admin dashboard <Icon name="arrowRight" size={18} />
+          </Link>
+          <span className="muted small">Login required</span>
+        </div>
+      </div>
+    </main>
   );
 }

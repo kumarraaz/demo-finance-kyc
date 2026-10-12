@@ -13,6 +13,16 @@ const baseHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  async redirects() {
+    // The application list used to live at /admin. Old bookmarks such as /admin?status=closed&q=ann keep working:
+    // Next passes the original query string through to the destination.
+    return ["q", "status", "page"].map((key) => ({
+      source: "/admin",
+      has: [{ type: "query" as const, key }],
+      destination: "/admin/applications",
+      permanent: false,
+    }));
+  },
   async headers() {
     return [
       {
