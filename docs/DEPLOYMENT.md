@@ -204,14 +204,14 @@ Do these on the Preview deployment, in order. Stop at the first failure.
 - [ ] **Separation:** the application you created is **not** visible in Production's database (check in the provider console, not by signing in to Production).
 - [ ] **Runtime logs** (`vercel logs --deployment <id> --level error`) show no `Connection terminated` or TLS errors.
 
-**Automated version of the runtime checks.** From your own machine (the password stays local; it is asked for with hidden input and never printed):
+**Automated version of the runtime checks.** From your own machine (the password stays local; it is asked for with hidden input, **twice**, so a hidden typo is caught before anything is sent, and it is never printed):
 
 ```bash
 node scripts/smoke-deployment.mjs https://<preview-url>            # read-only
 node scripts/smoke-deployment.mjs https://<preview-url> --write    # also creates one fictional application
 ```
 
-If Vercel Deployment Protection is on, create a Protection Bypass for Automation secret in the project settings and pass it as `VERCEL_AUTOMATION_BYPASS_SECRET` in your shell (e.g. `read -rs VERCEL_AUTOMATION_BYPASS_SECRET && export VERCEL_AUTOMATION_BYPASS_SECRET`). **Without it every request is answered by Vercel, not the app**: you would see a 302 to `vercel.com/sso-api` on GET requests and 401 on POSTs. The script detects this (including a bypass secret that is wrong or regenerated) and stops with one message instead of reporting application failures; a protected deployment can never tell you anything about the app's login or headers. The script checks health and schema, protected routes without a session, security headers and CSP nonce, cross-origin refusal, wrong-password handling, real login, session cookie attributes, authenticated access, (with `--write`) create and status change, logout, and that the old cookie is rejected afterwards. It uses 2 of the 5 allowed login attempts per 15 minutes.
+If Vercel Deployment Protection is on, create a Protection Bypass for Automation secret in the project settings and pass it as `VERCEL_AUTOMATION_BYPASS_SECRET` in your shell (e.g. `read -rs VERCEL_AUTOMATION_BYPASS_SECRET && export VERCEL_AUTOMATION_BYPASS_SECRET`). **Without it every request is answered by Vercel, not the app**: you would see a 302 to `vercel.com/sso-api` on GET requests and 401 on POSTs. The script detects this (including a bypass secret that is wrong or regenerated) and stops with one message instead of reporting application failures; a protected deployment can never tell you anything about the app's login or headers. The script checks health and schema, protected routes without a session, security headers and CSP nonce, cross-origin refusal, wrong-password handling, real login, session cookie attributes, authenticated access, (with `--write`) create and status change, logout, and that the old cookie is rejected afterwards. It uses 2 of the 5 allowed login attempts per 15 minutes. A `401 invalid_credentials` on the real login means the username or password typed does not match the configured values (the app deliberately does not say which); do not retry in a loop.
 
 Only after all of this passes can the Preview be called working. Production needs its own run of this list.
 

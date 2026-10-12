@@ -16,7 +16,7 @@ import { createInterface } from "node:readline/promises";
 import { randomBytes } from "node:crypto";
 import { stdin, stderr } from "node:process";
 import { isMainModule } from "./lib/main-module.mjs";
-import { readSecret } from "./lib/prompt.mjs";
+import { readSecretTwice } from "./lib/prompt.mjs";
 
 /** Validate the attributes of the session cookie the server sets on login. Pure, unit-tested. */
 export function checkSessionCookie(setCookie, { https }) {
@@ -49,6 +49,20 @@ export function checkPageHeaders(get, { https }) {
   if (get("x-powered-by")) problems.push("X-Powered-By is exposed");
   if (https && !/max-age=\d{7,}/.test(get("strict-transport-security") ?? "")) problems.push("HSTS missing or too short");
   return problems;
+}
+
+/**
+ * Explains a failed real-credentials login without ever hinting WHICH value was wrong (the app does not say).
+ * Pure, unit-tested.
+ * @param {number} status
+ */
+export function describeLoginFailure(status) {
+  if (status === 401) {
+    return "401 invalid_credentials: the username or password typed here does not match the values configured on this deployment (the app deliberately does not say which). Check typos and capitals. Do not retry in a loop: the limit is 5 attempts per IP per 15 minutes, and this run already used 2.";
+  }
+  if (status === 429) return "429 rate limited: wait for the 15-minute window to pass before trying again";
+  if (status === 503) return "503 not_configured: ADMIN_USERNAME / ADMIN_PASSWORD_HASH / SESSION_SECRET are missing or malformed on this deployment";
+  return `HTTP ${status}`;
 }
 
 /**
@@ -97,7 +111,7 @@ async function main() {
       username = (await rl.question("Admin username: ")).trim();
       rl.close();
     }
-    if (!password) password = await readSecret("Admin password (input hidden): ");
+    if (!password) password = await readSecretTwice("Admin password (input hidden): ", "Repeat the password: ");
   }
 
   let failures = 0;
@@ -156,7 +170,7 @@ async function main() {
 
   // 7. correct login
   const login = await post("/api/admin/login", { username, password });
-  record("login with the real credentials succeeds", login.status === 200, `HTTP ${login.status}${login.status === 429 ? " (rate limited; wait 15 minutes)" : ""}`);
+  record("login with the real credentials succeeds", login.status === 200, login.status === 200 ? "HTTP 200" : describeLoginFailure(login.status));
   let cookie;
   if (login.status === 200) {
     const setCookie = login.headers.getSetCookie?.()[0] ?? "";

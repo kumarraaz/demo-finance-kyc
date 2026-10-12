@@ -36,3 +36,15 @@ export async function readSecret(prompt) {
     stdin.on("data", onData);
   });
 }
+
+/**
+ * Ask for a secret twice and refuse if the two entries differ. Hidden input makes typos invisible, and a
+ * typo that reaches a rate-limited login only burns attempts, so confirm BEFORE sending.
+ * The error never contains either entry. `read` is injectable for tests.
+ */
+export async function readSecretTwice(first, second, read = readSecret) {
+  const a = await read(first);
+  const b = await read(second);
+  if (a !== b) throw new Error("The two entries differ, so nothing was sent. Run the command again.");
+  return a;
+}
