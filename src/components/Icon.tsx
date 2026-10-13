@@ -24,6 +24,15 @@ const PATHS = {
   chevronLeft: "M15 6l-6 6 6 6",
   chevronRight: "M9 6l6 6-6 6",
   user: "M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M4 21a8 8 0 0 1 16 0",
+  camera: "M4 8h3l2-3h6l2 3h3v11H4z M12 11a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
+  home: "M4 11l8-7 8 7 M6 10v10h12V10",
+  idCard: "M3 6h18v12H3z M7.5 10.5h.01 M7 16c0-1.5 1-2.5 2.5-2.5S12 14.5 12 16 M14 10h4 M14 14h3",
+  tag: "M3 12V4h8l10 10-8 8z M7.5 8.5h.01",
+  box: "M12 3l9 4.5v9L12 21l-9-4.5v-9z M3 7.5l9 4.5 9-4.5 M12 12v9",
+  calculator: "M6 3h12v18H6z M9 7h6 M9 12h.01 M12 12h.01 M15 12h.01 M9 16h.01 M12 16h.01 M15 16h.01",
+  save: "M5 4h11l3 3v13H5z M8 4v5h7V4 M8 20v-6h8v6",
+  edit: "M4 20h4L19 9l-4-4L4 16z",
+  refresh: "M20 11a8 8 0 1 0-2.3 5.7 M20 4v7h-7",
   inbox: "M3 13l3-8h12l3 8v6H3z M3 13h5l1 3h6l1-3h5",
 } as const;
 

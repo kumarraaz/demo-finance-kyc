@@ -10,13 +10,14 @@ export default function Home() {
         <h1>Merchant finance workspace (demo)</h1>
         <p className="muted">
           This is a prototype. Every verification step is <strong>simulated</strong>. It does not perform real KYC,
-          does not accept PAN or Aadhaar data, and never approves or offers a loan.
+          does not accept real PAN or Aadhaar data, and never approves or offers a loan.
         </p>
         <div className="home-actions">
-          <Link href="/admin" className="btn btn-primary">
-            Admin dashboard <Icon name="arrowRight" size={18} />
+          <Link href="/apply" className="btn btn-primary">
+            Start a demo application <Icon name="arrowRight" size={18} />
           </Link>
-          <span className="muted small">Login required</span>
+          <Link href="/admin" className="btn btn-secondary">Admin dashboard</Link>
+          <span className="muted small">Admin login required</span>
         </div>
       </div>
     </main>

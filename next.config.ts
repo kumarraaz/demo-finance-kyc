@@ -31,6 +31,12 @@ const nextConfig: NextConfig = {
         headers: [...baseHeaders, { key: "Cache-Control", value: "no-store" }],
       },
       {
+        // The ONLY page that may use the camera: the demo selfie capture screen, and only for this site itself.
+        // Every other page keeps camera=() from the rule above (a later rule overrides the same header key).
+        source: "/apply/liveness/capture",
+        headers: [{ key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" }],
+      },
+      {
         // API responses are JSON: nothing in them should ever load or run.
         source: "/api/:path*",
         headers: [{ key: "Content-Security-Policy", value: "default-src 'none'; frame-ancestors 'none'" }],

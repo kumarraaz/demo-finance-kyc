@@ -50,6 +50,17 @@ describe("static security headers (next.config.ts)", () => {
     const api = rules.find((r) => r.source === "/api/:path*")!;
     expect(api.headers[0].value).toBe("default-src 'none'; frame-ancestors 'none'");
   });
+  it("allows the camera only on the demo capture screen, for this site only", async () => {
+    const rules = await nextConfig.headers!();
+    const withCamera = rules.filter((r) => r.headers.some((h) => h.key === "Permissions-Policy" && /camera=\((self|\*)/.test(h.value)));
+    expect(withCamera.map((r) => r.source)).toEqual(["/apply/liveness/capture"]);
+    const policy = withCamera[0].headers.find((h) => h.key === "Permissions-Policy")!.value;
+    expect(policy).toContain("camera=(self)");
+    expect(policy).not.toContain("camera=*");
+    expect(policy).toContain("microphone=()");
+    expect(policy).toContain("geolocation=()");
+    expect(rules[0].headers.find((h) => h.key === "Permissions-Policy")!.value).toContain("camera=()"); // everything else stays blocked
+  });
   it("does not apply no-store to immutable build assets", async () => {
     const rules = await nextConfig.headers!();
     expect(rules[0].source).toContain("_next/static");
