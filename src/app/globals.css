@@ -365,6 +365,24 @@ a.kpi:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
   .table td::before { content: attr(data-label); color: var(--muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; text-align: left; flex: none; }
   .cell-amount, .th-amount { text-align: right !important; }
 }
+/* The journeys table has one more column, so it switches to cards below 1360px. */
+@media (max-width: 1359.98px) {
+  .table-wide, .table-wide tbody, .table-wide tr, .table-wide td { display: block; }
+  .table-wide thead { display: block; position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table-wide tbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 12px; background: var(--surface-2); }
+  .table-wide tr { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 14px; }
+  .table-wide td { min-width: 0; overflow-wrap: anywhere; }
+  .cell-person { text-align: right; }
+  .cell-ref, .cell-amount, .cell-date { white-space: normal; }
+  .table-wide td .badge { justify-content: flex-end; }
+  .table-wide tbody tr:hover { background: var(--surface); }
+  .table-wide td { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--border); text-align: right; }
+  .table-wide td:last-child { border-bottom: 0; }
+  .table-wide td::before { content: attr(data-label); color: var(--muted); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; text-align: left; flex: none; }
+  .cell-amount, .th-amount { text-align: right !important; }
+}
+.cell-date-line { display: block; }
+@media (min-width: 640px) and (max-width: 1359.98px) { .table-wide tbody { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 640px) and (max-width: 1099.98px) { .table tbody { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ---------- Pager ---------- */
@@ -457,3 +475,26 @@ a.kpi:hover { border-color: var(--border-strong); box-shadow: var(--shadow); }
 
 /* ---------- Error boundary ---------- */
 .error-box { display: grid; justify-items: start; gap: 14px; max-width: 560px; }
+
+/* ---------- Admin: customer journeys ---------- */
+.jbadge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: .75rem; font-weight: 700; line-height: 1.5; white-space: nowrap; background: var(--neutral-bg); color: var(--neutral); }
+.jbadge-completed { background: var(--success-bg); color: var(--success); }
+.jbadge-in_progress { background: var(--info-bg); color: var(--info); }
+.jbadge-review_required { background: var(--warning-bg); color: var(--warning); }
+.jbadge-failed { background: var(--danger-bg); color: var(--danger); }
+.jbadge-not_started, .jbadge-pending { background: var(--neutral-bg); color: var(--neutral); }
+.jsteps { list-style: none; margin: 0; padding: 0; display: inline-flex; gap: 3px; vertical-align: middle; }
+.jstep { width: 14px; height: 14px; border-radius: 4px; background: #cbd5e1; }
+.jstep-completed { background: #2f9e5a; }
+.jstep-in_progress { background: #3b63d6; }
+.jstep-review_required { background: #d99a1f; }
+.jstep-failed { background: #d64a3d; }
+.jflags { margin: 0; padding-left: 16px; font-size: .8125rem; color: var(--warning); }
+.jfilters { display: grid; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+@media (min-width: 900px) { .jfilters { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr auto; align-items: end; } }
+.jdetail-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+@media (min-width: 1024px) { .jdetail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+.jtable-simple { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.jtable-simple th { text-align: left; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.jtable-simple td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.jtable-wrap { overflow-x: auto; }

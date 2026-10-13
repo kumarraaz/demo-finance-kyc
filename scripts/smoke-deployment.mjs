@@ -161,6 +161,13 @@ async function main() {
   const loginHtml = await loginPage.text();
   record("login page renders the sign-in form", /Welcome back/.test(loginHtml) && /id="username"/.test(loginHtml) && /id="password"/.test(loginHtml) && /Sign in/.test(loginHtml));
   record("login page keeps the simulated-demo banner", /SIMULATED DEMO/.test(loginHtml));
+  // Customer journey (public, read-only checks): the welcome screen is served, and the camera is allowed on the capture screen only.
+  const applyPage = await req("/apply");
+  const applyHtml = await applyPage.text();
+  record("customer journey welcome screen is served", applyPage.status === 200 && /Start Application/.test(applyHtml) && /SIMULATED DEMO/.test(applyHtml), `HTTP ${applyPage.status}`);
+  record("camera is blocked on the welcome screen", /camera=\(\)/.test(applyPage.headers.get("permissions-policy") ?? ""));
+  const capturePage = await req("/apply/liveness/capture");
+  record("camera is allowed (self only) on the capture screen", capturePage.status === 200 && /camera=\(self\)/.test(capturePage.headers.get("permissions-policy") ?? ""), `HTTP ${capturePage.status}`);
   // Old bookmarks to the list that used to live at /admin must still reach it.
   const legacy = await req("/admin?status=closed");
   record("legacy /admin?status=... redirects to the applications list", legacy.status === 307 && (legacy.headers.get("location") ?? "").includes("/admin/applications"), `HTTP ${legacy.status}`);

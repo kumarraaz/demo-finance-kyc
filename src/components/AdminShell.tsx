@@ -16,11 +16,13 @@ const LINKS: NavLink[] = [
   { href: "/admin", label: "Overview", icon: "grid", match: (p) => p === "/admin" },
   { href: "/admin/applications", label: "Applications", icon: "list", match: (p) => p === "/admin/applications" || /^\/admin\/applications\/\d+/.test(p) },
   { href: "/admin/applications/new", label: "New application", icon: "plus", match: (p) => p === "/admin/applications/new" },
+  { href: "/admin/journeys", label: "Customer journeys", icon: "workflow", match: (p) => p === "/admin/journeys" || p.startsWith("/admin/journeys/") },
 ];
 
 function sectionTitle(path: string): string {
   if (path === "/admin") return "Overview";
   if (path === "/admin/applications/new") return "New application";
+  if (path.startsWith("/admin/journeys")) return "Customer journeys";
   if (path.startsWith("/admin/applications/") ) return "Application";
   if (path.startsWith("/admin/applications")) return "Applications";
   return "Admin";

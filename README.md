@@ -36,6 +36,8 @@ There is deliberately no "approved" or "rejected" status. `simulated_check_*` ou
 | `/admin` | admin | Overview: status counts, distribution, recent applications, workflow outline |
 | `/admin/applications` | admin | Searchable, filterable, paged application list (`?q=`, `?status=`, `?page=`) |
 | `/admin/applications/new`, `/admin/applications/[id]` | admin | Create; detail + status update + history timeline |
+| `/apply`, `/apply/*` | public | Customer journey (Phase 1, demo): 14 screens, simulated results. See `docs/PHASE1_FRONTEND.md` |
+| `/admin/journeys`, `/admin/journeys/[reference]` | admin | Step-by-step view of demo journeys stored in this browser |
 | `GET /api/health` | public | `{status, database, schema}` only. 503 if the database is unreachable or migrations are missing |
 | `POST /api/admin/login` | public | Sign in (rate limited) |
 | `POST /api/admin/logout` | cookie | Revokes the session server-side |

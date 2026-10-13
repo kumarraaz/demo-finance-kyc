@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Alert } from "@/components/Alert";
 import { PageHeader } from "@/components/PageHeader";
@@ -60,6 +61,16 @@ export default async function ApplicationPage({ params }: { params: Promise<{ id
               <Fact label="Created">{formatDateTime(app.createdAt)}</Fact>
               <Fact label="Last updated">{formatDateTime(app.updatedAt)}</Fact>
             </dl>
+          </section>
+          <section className="card" aria-labelledby="journey-h">
+            <div className="card-head"><h2 id="journey-h">Customer journey</h2></div>
+            <div className="card-body stack-sm">
+              <p className="muted">
+                This record was created by an admin. Customer self-service journeys (basic details, KYC, liveness, offer and more) are saved in the customer&apos;s own
+                browser in Phase 1, so they are not linked to this record yet. Server-side linking is Phase 2.
+              </p>
+              <div><Link href="/admin/journeys" className="btn btn-secondary">Open customer journeys</Link></div>
+            </div>
           </section>
           <WorkflowPanel current={app.status} />
         </div>

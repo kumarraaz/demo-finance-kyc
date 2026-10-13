@@ -20,7 +20,8 @@
     "vercel-build": "node scripts/vercel-build.mjs",
     "test:ci": "vitest run --reporter=default --reporter=json --outputFile=vitest-results.json && node scripts/assert-no-skips.mjs vitest-results.json",
     "audit:gate": "node scripts/audit-gate.mjs",
-    "check-env": "node scripts/check-env.mjs"
+    "check-env": "node scripts/check-env.mjs",
+    "e2e:journey": "node scripts/e2e-journey.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
